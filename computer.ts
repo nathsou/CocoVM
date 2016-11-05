@@ -1,7 +1,9 @@
 
-let Utils = {
+type bits = boolean[];
 
-    bool2num: (register: boolean[]) : number => {
+let Utils = {
+
+    bits2num: (register: bits) : number => {
         let b = '';
         for (let bit of register) 
             b += bit ? '1' : '0';
@@ -9,8 +11,8 @@ let Utils = {
         return parseInt(b, 2);
     },
 
-    num2bool: (register: number) : boolean[] => {
-        let b: boolean[] = [];
+    num2bits: (register: number) : bits => {
+        let b: bits = [];
 
         for (let bit of register.toString(2)) 
             b.push(bit === '1');
@@ -18,12 +20,12 @@ let Utils = {
         return b;
     },
 
-    fillZeros: (num: number | boolean[], count: number) : boolean[] => {
+    fillZeros: (num: number | bits, count: number) : bits => {
 
-        let b: boolean[] = [];
+        let b: bits = [];
 
         if (typeof(num) === 'number')
-            b = Utils.num2bool(num);
+            b = Utils.num2bits(num);
         else b = num;
 
         for (let i = b.length; i < count; i++)
@@ -32,7 +34,7 @@ let Utils = {
         return b;
     },
 
-    bits2str: (data: boolean[]) : string => {
+    bits2str: (data: bits) : string => {
         let str = '';
 
         for (let bit of data) 
@@ -41,8 +43,8 @@ let Utils = {
         return str;
     },
 
-    str2bits: (data: string) : boolean[] => {
-        let b: boolean[] = [];
+    str2bits: (data: string) : bits => {
+        let b: bits = [];
 
         for (let bit of data)
             b.push(bit === '1');
@@ -50,11 +52,11 @@ let Utils = {
         return b;
     },
 
-    negativeBinary: (bin: boolean[]) : boolean[] => { //two's complement
+    negativeBinary: (bin: bits) : bits => { //two's complement
         for (let i = 0; i < bin.length; i++)
             bin[i] = !bin[i];
 
-        return Utils.num2bool(Utils.bool2num(bin) + 1);
+        return Utils.num2bits(Utils.bits2num(bin) + 1);
     },
 
     xor: (a: boolean, b: boolean) : boolean => {
@@ -75,7 +77,7 @@ let Utils = {
 
 interface Architecture {
     bits: number;
-    registerCount: number,
+    registerCount: number
 }
 
 class Computer {
@@ -83,12 +85,12 @@ class Computer {
     STEP_LIMIT = 10000;
     arch: Architecture;
     instAddr: number;
-    registers: boolean[][];
-    instructions: boolean[][];
-    accumulator: boolean[];
-    status_reg: boolean[];
+    registers: bits[];
+    instructions: bits[];
+    status_reg: bits;
     instCodeBitCount: number;
     running: boolean = false;
+    eventHandlers: Map<string, (value) => any>;
 
     instNames = [
         'AEQ', //AEQ v: v -> A
@@ -108,23 +110,28 @@ class Computer {
     constructor(arch: Architecture) {
         this.arch = arch;
 
+        if (this.arch.registerCount < 1) 
+            this.emit('error', 'There must be at least one register (arch.registerCount)');
+
+        if (this.arch.bits < 1)
+            this.emit('error', 'Incorrect number of bits: ' + this.arch.bits);
+
         this.registers = [];
 
-        for (let i = 0; i < arch.registerCount; i++) {
+        for (let i = 0; i < arch.registerCount; i++)
             this.registers[i] = [];
-        }
 
         this.instructions = [];
-        this.accumulator = [];
         this.status_reg = [false, false]; //overflow, zero
         this.instAddr = 0;
+        this.eventHandlers = new Map<string, (value) => any>();
 
         this.instCodeBitCount = Math.floor(Math.log(this.instNames.length) / Math.LN2) + 1;
     }
 
-    compile(prog: string) : boolean[] {
+    compile(prog: string) : bits {
 
-        let binary: boolean[] = [];
+        let binary: bits = [];
 
         
         for (let inst of prog.split('\n')) {
@@ -141,7 +148,7 @@ class Computer {
             }
 
             if (n === null) {
-                alert('Unknown instruction: ' + l[0]);
+                this.emit('error', 'Unknown instruction: ' + l[0]);
             }
 
             
@@ -159,13 +166,10 @@ class Computer {
 
             let arg = 0; 
 
-            if (l[1].substr(0, 2) === '0x') { //hex
+            if (l[1].substr(0, 1) === '$') { //hex
+                arg = parseInt(l[1].replace('$', ''), 16);
+            } else //decimal
                 arg = parseInt(l[1]);
-            } else if (l[1][l[1].length - 1] === 'd') { //decimal
-                arg = parseInt(l[1].replace('d', ''));
-            } else { //binary
-                arg = parseInt(l[1], 2);
-            }
 
             for (let bit of Utils.fillZeros(arg, this.arch.bits))
                 binary.push(bit);
@@ -176,9 +180,9 @@ class Computer {
 
     }
 
-    loadProgram(prog: boolean[] | string) : void {
+    loadProgram(prog: bits | string) : void {
 
-        if (!(prog instanceof String)) { //boolean[]
+        if (!(prog instanceof String)) { //bits
 
         this.instructions = [];
 
@@ -196,20 +200,20 @@ class Computer {
 
     step() : void { //runs one clock cycle
 
-        if (this.instAddr > this.instructions.length) {
-            alert('No instruction at addr: ' + this.instAddr.toString(16));
+        if (this.instAddr >= this.instructions.length) {
+            this.emit('error', 'No instruction at addr: ' + this.instAddr.toString(16))
         }
 
         let inst = this.instructions[this.instAddr];
 
-        let icode = Utils.bool2num(inst.slice(0, this.instCodeBitCount));
+        let icode = Utils.bits2num(inst.slice(0, this.instCodeBitCount));
         let argBin = inst.slice(this.instCodeBitCount, inst.length);
-        let arg = Utils.bool2num(argBin);
+        let arg = Utils.bits2num(argBin);
 
         switch (icode) {
             case 0: //AEQ
 
-                this.accumulator = argBin;
+                this.setRegister(0, argBin);
 
                 this.instAddr++;
 
@@ -217,7 +221,8 @@ class Computer {
 
             case 1: //LDA
 
-                this.accumulator = this.registers[arg];
+
+                this.setRegister(0, this.getRegister(arg));
 
                 this.instAddr++;
 
@@ -225,7 +230,7 @@ class Computer {
 
             case 2: //STA 
 
-                this.registers[arg] = this.accumulator;
+                this.setRegister(arg, this.getRegister(0));
 
                 this.instAddr++;
 
@@ -239,7 +244,7 @@ class Computer {
 
             case 4: //ADD
 
-                this.accumulator = this.ALU(this.accumulator, this.registers[arg]);
+                this.setRegister(0, this.ALU(this.getRegister(0), this.getRegister(arg)));
 
                 this.instAddr++;
 
@@ -255,7 +260,7 @@ class Computer {
 
             case 6: //OUT
 
-                console.info(Utils.bits2str(this.accumulator) + ' - ' + Utils.bool2num(this.accumulator));
+                this.emit('OUT', `${Utils.bits2str(this.getRegister(0))} - ${Utils.bits2num(this.getRegister(0))}`);
 
                 this.instAddr++;
 
@@ -277,7 +282,7 @@ class Computer {
 
             case 9: //CMP
 
-                this.status_reg[1] = Utils.bool2num(this.accumulator) === arg;
+                this.status_reg[1] = Utils.bits2num(this.getRegister(0)) === arg;
 
                 this.instAddr++;
 
@@ -297,17 +302,22 @@ class Computer {
 
                 break;
         }
+
+        this.emit('step', this.instAddr);
     }
 
     run(clean: boolean = true) : void { //runs instructions until HLT
 
         this.running = true;
+
+        this.emit('run');
+
         let steps = 0;
 
         while (this.running) {
             this.step();
             if (++steps > this.STEP_LIMIT) {
-                alert('Infinite loop detected');
+                this.emit('error', 'Infinite loop detected');
                 break;
             }
         }
@@ -315,33 +325,46 @@ class Computer {
         if (clean) this.reset(false);
     }
 
-    setRegister(n: number, value: boolean[]) : void {
+    getRegister(n: number) : bits {
+
+        if (n >= this.arch.registerCount)
+            this.emit('error', 'Invalid register address: ' + n);
+
+        return this.registers[n];
+    }
+
+    setRegister(n: number, value: bits) : void {
+
+        if (n >= this.arch.registerCount)
+            this.emit('error', 'Invalid register address: ' + n);
+
         this.registers[n] = value;
     }
 
     reset(cleanInstructions: boolean = true) : void {
 
-        for (let i = 0; i < this.arch.registerCount; i++) {
+        for (let i = 0; i < this.arch.registerCount; i++) 
             this.registers[i] = [];
-        }
-
-        this.accumulator = [];
 
         if (cleanInstructions) this.instructions = [];
 
         this.status_reg = [false, false];
         this.instAddr = 0;
         this.running = false;
+
+        this.emit('reset');
     }
 
     halt(msg: string = '') {
         console.warn('Computer halted: ' + msg);
         this.running = false;
+
+        this.emit('halt');
     }
 
-    ALU(a: boolean[], b: boolean[], sub = false) : boolean[] {
+    ALU(a: bits, b: bits, sub = false) : bits {
 
-        let sum: boolean[] = [],
+        let sum: bits = [],
             carry = false;
         
         let m = Math.max(a.length, b.length);
@@ -359,13 +382,25 @@ class Computer {
         }
 
         if (carry) {
-            if (sum.length < this.arch.bits) {
+            if (sum.length < this.arch.bits) {
                 sum.push(true);
             } else this.status_reg[0] = true;
         }
 
         return sum;
 
+    }
+
+    on(ev: string, handler: (value) => any) {
+
+        this.eventHandlers.set(ev, handler);
+
+    } 
+
+    protected emit(ev: string, value?: any) {
+
+        if (this.eventHandlers.has(ev))
+            this.eventHandlers.get(ev).call(this, value);
     }
     
 

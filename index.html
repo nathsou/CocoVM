@@ -1,49 +1,63 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
-        <title>Basic VM</title>
+        <title>Coco VM</title>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="codemirror/lib/codemirror.css">
     </head>
     <body>
 
-        <textarea id='prog' style='height: auto;'>
+        <div id='computer'>
+            <div id='program' style='float: left;'>
+                <textarea id='prog' style='height: auto; 1px solid #eee;'>
 AEQ 1
 STA 0
 STA 1
 AEQ 0
-STA 3d
+STA 3
 LDA 0
 OUT
-STA 2d
+STA 2
 ADD 1
 STA 0
-LDA 2d
+LDA 2
 STA 1
-LDA 3d
-CMP 10d
-INC 3d
-JNEQ 5d
-HLT
-        </textarea></br>
+LDA 3
+CMP 10
+INC 3
+JNEQ 5
+HLT               </textarea></br>
 
-        <textarea id='binary'></textarea></br>
+                <textarea id='binary'></textarea></br>
 
-        <button onclick='assembleProg();'>Assemble</button>
-        <button onclick='runProg();'>Run</button>
-        <button onclick='stepProg();'>Step</button>
+                <button onclick='assembleProg();'>Assemble</button>
+                <button onclick='runProg();'>Run</button>
+                <button onclick='stepProg();'>Step</button>
+            </div>
 
+            <div id='output' style='width: 100%; float: right;'>
+                <textarea id='console'></textarea></br>
+                <button onclick='document.getElementById("console").value = ``'>Clear</button>
+            </div>
+
+        </div>
+
+        <script src="codemirror/lib/codemirror.js"></script>
         <script src='computer.js'></script>
         
         <script>
-
             var computer = new Computer({
-                bits: 32,
+                bits: 16,
                 registerCount: 10
             });
 
+            var editor = CodeMirror.fromTextArea(document.getElementById('prog'), {
+                lineNumbers: true
+            });
+
             function assembleProg() {
-                let bin = computer.compile(document.getElementById('prog').value);
+                let bin = computer.compile(editor.getValue());
                 computer.loadProgram(bin);
                 document.getElementById('binary').value = Utils.bits2str(bin);
             }
@@ -56,17 +70,25 @@ HLT
                 computer.run();
             }
 
+            computer.on('OUT', function(value) {
+                document.getElementById('console').value += `${value}\n`;
+            });
+
+            computer.on('error', function(e) {
+                console.warn(e);
+                alert(e);
+            });
+
             /*
             var prog = `
-AEQ 1789d
+AEQ 1789
 STA 0
-AEQ 421d
+AEQ 421
 ADD 0
 OUT
 HLT
             `;
             */
-
         </script>
 
     </body>

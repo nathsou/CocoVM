@@ -49,7 +49,8 @@ HLT               </textarea></br>
         <script>
             var computer = new Computer({
                 bits: 16,
-                registerCount: 10
+                registerCount: 10,
+                RAM_bytes: 256 
             });
 
             var editor = CodeMirror.fromTextArea(document.getElementById('prog'), {
@@ -67,7 +68,7 @@ HLT               </textarea></br>
             }
 
             function runProg() {
-                computer.run();
+                computer.run(false);
             }
 
             computer.on('OUT', function(value) {

@@ -59,8 +59,8 @@ HLT               </textarea></br>
 
             function assembleProg() {
                 let bin = computer.compile(editor.getValue());
-                computer.loadProgram(bin);
-                document.getElementById('binary').value = Utils.bits2str(bin);
+                computer.loadProgram(bin, 128);
+                document.getElementById('binary').value = Utils.bits2hexstr(bin);
             }
 
             function stepProg() {
@@ -72,7 +72,11 @@ HLT               </textarea></br>
             }
 
             computer.on('OUT', function(value) {
+
+                value = Utils.bits2num(value);
+
                 document.getElementById('console').value += `${value}\n`;
+                console.info(value);
             });
 
             computer.on('error', function(e) {

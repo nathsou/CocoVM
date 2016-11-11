@@ -31,6 +31,13 @@ let Utils = {
             str += bit ? '1' : '0';
         return str;
     },
+    bits2hexstr: (data) => {
+        let bin = Utils.bits2str(data);
+        let hex = '';
+        for (let i = 0; i < bin.length; i += 16)
+            hex += parseInt(bin.substr(i, i + 16), 2).toString(16) + ' ';
+        return hex;
+    },
     str2bits: (data) => {
         let b = [];
         for (let bit of data)
@@ -73,9 +80,7 @@ class RAM extends EventEmitter {
         super();
         this.byteLength = byteLength;
         this.capacity = nb_bytes;
-        this.memory = [];
-        for (let i = 0; i < nb_bytes; i++)
-            this.memory[i] = [];
+        this.clear();
     }
     read(addr) {
         if (addr >= this.capacity)
@@ -91,29 +96,40 @@ class RAM extends EventEmitter {
             value = Utils.fillZeros(value, this.byteLength);
         this.memory[addr] = value;
     }
+    clear() {
+        this.memory = [];
+        for (let i = 0; i < this.capacity; i++)
+            this.memory[i] = [];
+    }
 }
 class Computer extends EventEmitter {
     constructor(arch) {
         super();
         this.STEP_LIMIT = 10000;
         this.running = false;
-        this.instNames = [
-            'AEQ',
-            'LDA',
-            'STA',
-            'JMP',
-            'ADD',
-            'JC',
-            'OUT',
-            'SUB',
-            'INC',
-            'CMP',
-            'JNEQ',
-            'HLT' //HLT : Stop execution
-        ];
+        this.opcodes = {
+            'HLT': 0,
+            'MOV%#': 1,
+            'MOV%@': 2,
+            'MOV@#': 3,
+            'MOV@%': 4,
+            'MOV%%': 5,
+            'OUT%': 6,
+            'OUT@': 7,
+            'ADD%%': 8,
+            'ADD%@': 9,
+            'ADD%#': 10,
+            'SUB%%': 11,
+            'SUB%@': 12,
+            'SUB%#': 13
+        };
+        this.status_reg = {
+            'ZERO': false,
+            'CARRY': false
+        };
         this.arch = arch;
         if (this.arch.registerCount < 1)
-            this.emit('error', 'There must be at least one register (arch.registerCount)');
+            this.emit('error', 'There must be at least two register (arch.registerCount)');
         if (this.arch.bits < 1)
             this.emit('error', 'Incorrect number of bits: ' + this.arch.bits);
         this.registers = [];
@@ -121,121 +137,140 @@ class Computer extends EventEmitter {
             this.registers[i] = [];
         this.RAM = new RAM(arch.bits, arch.RAM_bytes);
         this.bindEvent(this.RAM, 'error');
-        this.instructions = [];
-        this.status_reg = [false, false]; //overflow, zero
         this.PC = 0;
-        this.instCodeBitCount = Math.floor(Math.log(this.instNames.length) / Math.LN2) + 1;
+    }
+    toByte(n) {
+        return Utils.fillZeros(n, this.arch.bits);
     }
     compile(prog) {
         let binary = [];
-        let bitsPerInst = Math.ceil((this.instCodeBitCount + 2 + this.arch.bits) / this.arch.bits) * this.arch.bits;
         for (let inst of prog.split('\n')) {
-            //Translate the instruction into binary
-            //Find current instruction's code
             inst = inst.trim();
-            let instBinary = [];
             if (inst === '')
                 continue;
-            let l = inst.split(' ');
-            let n = this.instNames.indexOf(l[0]);
-            if (n === -1)
-                this.emit('error', 'Unknown instruction: ' + l[0]);
-            instBinary.push(...Utils.fillZeros(n, this.instCodeBitCount)); //Add instruction code
-            //Handle the argument
-            if (l[1] === undefined)
+            let l = [];
+            l[0] = inst.substr(0, inst.indexOf(' ') || inst.length);
+            l[1] = inst.replace(l[0], '');
+            if (l[0] === '') {
+                l[0] = l[1];
                 l[1] = '';
-            let arg = 0;
-            instBinary.push(l[1][0] === '#'); //numerical value or RAM addr ?
-            instBinary.push(l[1][0] === '%'); //register addr
-            l[1] = l[1].replace('#', '').replace('%', '');
-            if (l[1].substr(0, 1) === '$') {
-                arg = parseInt(l[1].replace('$', ''), 16);
+            }
+            //Handle the operand(s);
+            let inst_name = l[0];
+            let operands = [];
+            for (let arg of l[1].split(',')) {
+                arg = arg.trim();
+                if (arg === '')
+                    continue;
+                inst_name += arg[0];
+                if (['%', '@', '#'].indexOf(arg[0]) === -1) {
+                    this.emit('error', 'Invalid addressing mode identifier: ' + arg[0]);
+                    break;
+                }
+                arg = arg.replace(arg[0], '');
+                switch (arg[0]) {
+                    case '$':
+                        operands.push(parseInt(arg, 16));
+                        break;
+                    case 'b':
+                        operands.push(parseInt(arg, 2));
+                        break;
+                    default:
+                        operands.push(parseInt(arg));
+                        break;
+                }
+            }
+            let opcode = this.opcodes[inst_name];
+            if (opcode !== undefined) {
+                binary.push(...this.toByte(opcode));
+                for (let op of operands)
+                    binary.push(...this.toByte(op));
             }
             else
-                arg = parseInt(l[1]);
-            instBinary.push(...Utils.fillZeros(arg, bitsPerInst - instBinary.length));
-            //binary.push(...Utils.fillZeros(instBinary, bitsPerInst, true));
-            binary.push(...instBinary);
+                this.emit('error', 'Unknown instruction: ' + opcode);
         }
         return binary;
     }
-    loadProgram(prog) {
+    loadProgram(prog, addr) {
         if (!(prog instanceof String)) {
-            this.instructions = [];
-            this.PC = 0;
-            let instLen = Math.ceil((this.instCodeBitCount + 2 + this.arch.bits) / this.arch.bits) * this.arch.bits;
-            for (let i = 0; i < prog.length; i += instLen)
-                this.instructions.push(prog.slice(i, i + instLen));
+            this.PC = addr;
+            for (let i = 0; i < prog.length; i += this.arch.bits)
+                this.RAM.write(addr + i / this.arch.bits, prog.slice(i, i + this.arch.bits));
         }
         else
-            this.loadProgram(Utils.str2bits(prog));
+            this.loadProgram(Utils.str2bits(prog), addr);
     }
     step() {
-        if (this.PC >= this.instructions.length) {
-            this.emit('error', 'No instruction at addr: ' + this.PC.toString(16));
-        }
-        let inst = this.instructions[this.PC];
-        let icode = Utils.bits2num(inst.slice(0, this.instCodeBitCount));
-        let argBin = inst.slice(this.instCodeBitCount + 2, inst.length);
-        let arg = Utils.bits2num(argBin);
-        if (!inst[this.instCodeBitCount]) {
-            argBin = this.RAM.read(arg);
-            arg = Utils.bits2num(argBin);
-        }
-        else if (inst[this.instCodeBitCount + 1]) {
-            argBin = this.getRegister(arg);
-            arg = Utils.bits2num(argBin);
-        }
-        switch (icode) {
-            case 0:
-                this.setRegister(0, argBin);
-                this.PC++;
-                break;
-            case 1:
-                this.setRegister(0, argBin);
-                this.PC++;
-                break;
-            case 2:
-                this.setRegister(arg, this.getRegister(0));
-                this.PC++;
-                break;
-            case 3:
-                this.PC = arg;
-                break;
-            case 4:
-                this.setRegister(0, this.ALU(this.getRegister(0), argBin));
-                this.PC++;
-                break;
-            case 5:
-                if (this.status_reg[0])
-                    this.PC = arg;
-                else
-                    this.PC++;
-                break;
-            case 6:
-                this.emit('OUT', `${Utils.bits2str(this.getRegister(0))} - ${Utils.bits2num(this.getRegister(0))}`);
-                this.PC++;
-                break;
-            case 7:
-                //TODO
-                break;
-            case 8:
-                this.registers[arg] = this.ALU(this.registers[arg], [true]);
-                this.PC++;
-                break;
-            case 9:
-                this.status_reg[1] = Utils.bits2num(this.getRegister(0)) === arg;
-                this.PC++;
-                break;
-            case 10:
-                if (!this.status_reg[1]) {
-                    this.PC = arg;
-                }
-                else
-                    this.PC++;
-                break;
-            case 11:
+        this.IR = this.RAM.read(this.PC);
+        let opcode = Utils.bits2num(this.IR);
+        let a, b;
+        switch (opcode) {
+            case this.opcodes['HLT']:
                 this.running = false;
+                break;
+            case this.opcodes['MOV%%']:
+                a = Utils.bits2num(this.RAM.read(this.PC + 1)),
+                    b = Utils.bits2num(this.RAM.read(this.PC + 2));
+                this.setRegister(a, this.getRegister(b));
+                this.PC += 3;
+                break;
+            case this.opcodes['MOV%#']:
+                a = Utils.bits2num(this.RAM.read(this.PC + 1)),
+                    b = this.RAM.read(this.PC + 2);
+                this.setRegister(a, b);
+                this.PC += 3;
+                break;
+            case this.opcodes['MOV%@']:
+                a = Utils.bits2num(this.RAM.read(this.PC + 1)),
+                    b = Utils.bits2num(this.RAM.read(this.PC + 2));
+                this.setRegister(a, this.RAM.read(b));
+                this.PC += 3;
+                break;
+            case this.opcodes['MOV@#']:
+                a = Utils.bits2num(this.RAM.read(this.PC + 1)),
+                    b = this.RAM.read(this.PC + 2);
+                this.PC += 3;
+                this.RAM.write(a, b);
+                break;
+            case this.opcodes['MOV@%']:
+                a = Utils.bits2num(this.RAM.read(this.PC + 1)),
+                    b = Utils.bits2num(this.RAM.read(this.PC + 2));
+                this.RAM.write(a, this.getRegister(b));
+                this.PC += 3;
+                break;
+            case this.opcodes['MOV%#']:
+                a = Utils.bits2num(this.RAM.read(this.PC + 1)),
+                    b = this.RAM.read(this.PC + 2);
+                this.setRegister(a, b);
+                this.PC += 3;
+                break;
+            case this.opcodes['OUT%']:
+                a = Utils.bits2num(this.RAM.read(this.PC + 1));
+                this.emit('OUT', this.getRegister(a));
+                this.PC += 2;
+                break;
+            case this.opcodes['OUT@']:
+                a = Utils.bits2num(this.RAM.read(this.PC + 1));
+                this.emit('OUT', this.RAM.read(a));
+                this.PC += 2;
+                break;
+            case this.opcodes['ADD%#']:
+                a = Utils.bits2num(this.RAM.read(this.PC + 1)),
+                    b = this.RAM.read(this.PC + 2);
+                this.setRegister(a, this.ALU(this.getRegister(a), b));
+                this.PC += 3;
+                break;
+            case this.opcodes['ADD%%']:
+                a = Utils.bits2num(this.RAM.read(this.PC + 1)),
+                    b = Utils.bits2num(this.RAM.read(this.PC + 2));
+                this.setRegister(a, this.ALU(this.getRegister(a), this.getRegister(b)));
+                this.PC += 3;
+                break;
+            case this.opcodes['ADD%@']:
+                a = Utils.bits2num(this.RAM.read(this.PC + 1)),
+                    b = Utils.bits2num(this.RAM.read(this.PC + 2));
+                this.setRegister(a, this.ALU(this.getRegister(a), this.RAM.read(b)));
+                this.PC += 3;
                 break;
         }
         this.emit('step', this.PC);
@@ -264,12 +299,12 @@ class Computer extends EventEmitter {
             this.emit('error', 'Invalid register address: ' + n);
         this.registers[n] = value;
     }
-    reset(cleanInstructions = true) {
+    reset(clearRAM = true) {
         for (let i = 0; i < this.arch.registerCount; i++)
             this.registers[i] = [];
-        if (cleanInstructions)
-            this.instructions = [];
-        this.status_reg = [false, false];
+        if (clearRAM)
+            this.RAM.clear();
+        this.status_reg = { CARRY: false, ZERO: false };
         this.PC = 0;
         this.running = false;
         this.emit('reset');
@@ -277,7 +312,7 @@ class Computer extends EventEmitter {
     halt(msg = '') {
         console.warn('Computer halted: ' + msg);
         this.running = false;
-        this.emit('halt', msg);
+        this.emit('error', msg);
     }
     ALU(a, b, sub = false) {
         let sum = [], carry = false;

@@ -11,23 +11,11 @@
         <div id='computer'>
             <div id='program' style='float: left;'>
                 <textarea id='prog' style='height: auto; 1px solid #eee;'>
-AEQ 1
-STA 0
-STA 1
-AEQ 0
-STA 3
-LDA 0
-OUT
-STA 2
-ADD 1
-STA 0
-LDA 2
-STA 1
-LDA 3
-CMP 10
-INC 3
-JNEQ 5
-HLT               </textarea></br>
+MOV %0, #1789
+MOV @11, #33
+ADD %0, @11
+OUT %0
+HLT             </textarea></br>
 
                 <textarea id='binary'></textarea></br>
 
@@ -83,17 +71,7 @@ HLT               </textarea></br>
                 console.warn(e);
                 alert(e);
             });
-
-            /*
-            var prog = `
-AEQ 1789
-STA 0
-AEQ 421
-ADD 0
-OUT
-HLT
-            `;
-            */
+            
         </script>
 
     </body>

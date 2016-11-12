@@ -106,6 +106,11 @@ let Utils = {
 
     xor: (a: boolean, b: boolean): boolean => {
         return (a || b) && !(a && b);
+    },
+
+    necessaryBitCount: (n: number): number => {
+        if (n === 0) return 1;
+        return Math.floor(Math.log2(n)) + 1;
     }
 
 };
@@ -192,7 +197,7 @@ class RAM extends EventEmitter {
 
 class Computer extends EventEmitter {
 
-    STEP_LIMIT = 10000;
+    STEP_LIMIT = 100000;
     arch: Architecture;
     PC: number; //Program Counter -> addr of the current instruction
     IR: bits; //Instruction Register -> stores the current instruction's opcode 
@@ -233,12 +238,20 @@ class Computer extends EventEmitter {
         'JNZ%': 26, //jump if zero flag is false
         'JNZ!': 27,
         'JNEQ%': 22, //jump if not equal
-        'JNEQ!': 28
+        'JNEQ!': 28,
+        'DEC%': 29,
+        'JGTR%': 30,
+        'JGTR!': 31,
+        'JNGTR%': 32,
+        'JNGTR!': 33,
+        'JLSS%': 32,
+        'JLSS!': 33
     };
 
     status_reg = {
         'ZERO': false,
-        'CARRY': false
+        'CARRY': false,
+        'SIGN': false
     };
     
 
@@ -278,9 +291,6 @@ class Computer extends EventEmitter {
         let labels = new Map<string, number>();
 
         //Remove comments and blank lines & identify labels
-
-        let addr = 0;
-
         for (let inst of prog.split('\n')) {
 
             inst = inst.trim();
@@ -290,23 +300,18 @@ class Computer extends EventEmitter {
             let label: string[];
 
             if ((label = /^[.A-Za-z]\w*:$/.exec(inst)) !== null) {
-                labels.set(label[0].replace(':', ''), addr);
+                labels.set(label[0].replace(':', ''), instructions.length);
             } else instructions.push(inst);
-
-
-            //count bytes
-            if (inst.indexOf(' ') !== -1) {
-                if (inst.indexOf(',') !== -1) {
-                    addr += 3;
-                } else {
-                    addr += 2;
-                }
-            } else addr++;
 
         }
 
-
         //assemble instructions
+
+        //       3 bytes
+        // <----------------->   
+        //   1 byte - 2 bytes
+        // <-------><-------> 
+        // |OP CODE|ARG1|ARG2|
 
         for (let i = 0; i < instructions.length; i++) {
 
@@ -325,12 +330,10 @@ class Computer extends EventEmitter {
 
             let inst_name = l[0];
             let operands = [];
-            addr = 0;
 
             for (let arg of l[1].split(',')) {
 
                 arg = arg.trim();
-                addr++;
 
                 if (arg === '') continue;
 
@@ -342,7 +345,7 @@ class Computer extends EventEmitter {
                     label = label[0];
 
                     if (labels.has(label)) {
-                        let relative = labels.get(label) - addr;
+                        let relative = labels.get(label) - i;
                         arg = `!${relative}`;
                     } else this.emit('error', `Label not foud: ${label}`)
                 }
@@ -353,6 +356,8 @@ class Computer extends EventEmitter {
                     this.emit('error', 'Invalid addressing mode identifier: ' + arg[0]);
                     break;
                 }
+
+                let val = 0;
 
                 arg = arg.replace(arg[0], '');
 
@@ -372,17 +377,19 @@ class Computer extends EventEmitter {
 
                 }
 
-
             }
 
             let opcode = this.opcodes[inst_name];
 
-            addr += operands.length;
 
             if (opcode !== undefined) {
+
                 binary.push(...this.toByte(opcode));
-                for (let op of operands)
-                    binary.push(...this.toByte(op));
+                for (let i = 0; i < 2; i++) {
+                    if (i < operands.length)
+                        binary.push(...this.toByte(operands[i]));
+                    else binary.push(...this.toByte(0));
+                }
             } else this.emit('error', 'Unknown instruction: ' + inst_name);
             
 
@@ -413,7 +420,6 @@ class Computer extends EventEmitter {
         this.IR = this.RAM.read(this.PC);
 
         let opcode = this.byte2num(this.IR);
-
         let a, b;
 
 
@@ -497,7 +503,7 @@ class Computer extends EventEmitter {
 
                 this.emit('OUT', this.getRegister(a));
 
-                this.PC += 2;
+                this.PC += 3;
 
                 break;
 
@@ -507,7 +513,7 @@ class Computer extends EventEmitter {
 
                 this.emit('OUT', this.RAM.read(a));
 
-                this.PC += 2;
+                this.PC += 3;
 
                 break;
 
@@ -583,7 +589,17 @@ class Computer extends EventEmitter {
 
                 this.setRegister(a, this.ALU.add(this.getRegister(a), [true]));
 
-                this.PC += 2;
+                this.PC += 3;
+
+                break;
+
+            case this.opcodes['DEC%']:
+
+                a = this.byte2num(this.RAM.read(this.PC + 1));
+
+                this.setRegister(a, this.ALU.sub(this.getRegister(a), [true]));
+
+                this.PC += 3;
 
                 break;
 
@@ -592,7 +608,7 @@ class Computer extends EventEmitter {
                 a = this.byte2num(this.RAM.read(this.PC + 1)),
                 b = this.byte2num(this.RAM.read(this.PC + 2));
 
-                this.status_reg.ZERO = Utils.bytesEQU(this.getRegister(a), this.getRegister(b));
+                this.ALU.sub(this.getRegister(a), this.getRegister(b));
 
                 this.PC += 3;
 
@@ -603,7 +619,7 @@ class Computer extends EventEmitter {
                 a = this.byte2num(this.RAM.read(this.PC + 1)),
                 b = this.byte2num(this.RAM.read(this.PC + 2));
 
-                this.status_reg.ZERO = Utils.bytesEQU(this.getRegister(a), this.RAM.read(b));
+                this.ALU.sub(this.getRegister(a), this.RAM.read(b));
 
                 this.PC += 3;
 
@@ -612,9 +628,11 @@ class Computer extends EventEmitter {
             case this.opcodes['CMP%#']:
 
                 a = this.byte2num(this.RAM.read(this.PC + 1)),
-                b = this.byte2num(this.RAM.read(this.PC + 2));
+                b = this.RAM.read(this.PC + 2);
 
-                this.status_reg.ZERO = Utils.bytesEQU(this.getRegister(a), b);
+                this.ALU.sub(this.getRegister(a), b);
+
+                let c = Utils.byte2num(b, 16);
 
                 this.PC += 3;
 
@@ -632,7 +650,7 @@ class Computer extends EventEmitter {
 
                 a = this.byte2num(this.RAM.read(this.PC + 1));
 
-                this.PC += a;
+                this.PC += 3 * a;
 
                 break;
 
@@ -641,6 +659,7 @@ class Computer extends EventEmitter {
                 a = this.byte2num(this.RAM.read(this.PC + 1));
 
                 if (this.status_reg.CARRY) this.PC = a;
+                else this.PC += 3;
 
                 break;
 
@@ -648,7 +667,8 @@ class Computer extends EventEmitter {
 
                 a = this.byte2num(this.RAM.read(this.PC + 1));
 
-                if (this.status_reg.CARRY) this.PC += a;
+                if (this.status_reg.CARRY) this.PC += 3 * a;
+                else this.PC += 3;
 
                 break;
 
@@ -657,6 +677,7 @@ class Computer extends EventEmitter {
                 a = this.byte2num(this.RAM.read(this.PC + 1));
 
                 if (!this.status_reg.CARRY) this.PC = a;
+                else this.PC += 3;
 
                 break;
 
@@ -664,7 +685,8 @@ class Computer extends EventEmitter {
 
                 a = this.byte2num(this.RAM.read(this.PC + 1));
 
-                if (!this.status_reg.CARRY) this.PC += a;
+                if (!this.status_reg.CARRY) this.PC += 3 * a;
+                else this.PC += 3;
 
                 break;
 
@@ -673,6 +695,7 @@ class Computer extends EventEmitter {
                 a = this.byte2num(this.RAM.read(this.PC + 1));
 
                 if (this.status_reg.ZERO) this.PC = a;
+                else this.PC += 3;
 
                 break;
 
@@ -680,7 +703,8 @@ class Computer extends EventEmitter {
 
                 a = this.byte2num(this.RAM.read(this.PC + 1));
 
-                if (this.status_reg.ZERO) this.PC += a;
+                if (this.status_reg.ZERO) this.PC += 3 * a;
+                else this.PC += 3;
 
                 break;
 
@@ -689,6 +713,7 @@ class Computer extends EventEmitter {
                 a = this.byte2num(this.RAM.read(this.PC + 1));
 
                 if (!this.status_reg.ZERO) this.PC = a;
+                else this.PC += 3;
 
                 break;
 
@@ -696,10 +721,49 @@ class Computer extends EventEmitter {
 
                 a = this.byte2num(this.RAM.read(this.PC + 1));
 
-                if (!this.status_reg.ZERO) this.PC += a;
+                if (!this.status_reg.ZERO) this.PC += 3 * a;
+                else this.PC += 3;
+
+                break;
+
+            case this.opcodes['JGTR%']:
+
+                a = this.byte2num(this.RAM.read(this.PC + 1));
+
+                if (!this.status_reg.SIGN) this.PC = a;
+                else this.PC += 3;
+
+                break;
+
+            case this.opcodes['JGTR!']:
+
+                a = this.byte2num(this.RAM.read(this.PC + 1));
+
+                if (!this.status_reg.SIGN) this.PC += 3 * a;
+                else this.PC += 3;
+
+                break;
+
+            case this.opcodes['JLSS%']:
+
+                a = this.byte2num(this.RAM.read(this.PC + 1));
+
+                if (this.status_reg.SIGN) this.PC = a;
+                else this.PC += 3;
+
+                break;
+
+            case this.opcodes['JLSS!']:
+
+                a = this.byte2num(this.RAM.read(this.PC + 1));
+
+                if (this.status_reg.SIGN) this.PC += 3 * a;
+                else this.PC += 3;
 
                 break;
         }
+
+        
         
 
         this.emit('step', this.PC);
@@ -723,7 +787,7 @@ class Computer extends EventEmitter {
             }
         }
 
-        if (clean) this.reset(false);
+        if (clean) this.reset(true);
     }
 
     getRegister(n: number): bits {
@@ -749,7 +813,7 @@ class Computer extends EventEmitter {
 
         if (clearRAM) this.RAM.clear();
 
-        this.status_reg = { CARRY: false, ZERO: false };
+        this.status_reg = { CARRY: false, ZERO: false, SIGN: false };
         this.PC = 0;
         this.IR = [];
         this.running = false;
@@ -807,38 +871,60 @@ class ALU { //Arithmetic-logic unit
             carry = s.carry;
         }
 
+    
         //CARRY FLAG
         if (carry) {
             if (sum.length < this.computer.arch.bits) {
                 sum.push(true);
-            } else this.computer.status_reg.CARRY = true;
+            } else {
+                let c = true;
+                for (let i = 1; i < sum.length; i++) {
+                    if (!sum[i]) c = false;
+                    break
+                }
+
+                this.computer.status_reg.CARRY = c;
+
+            }
         }
 
+
+        sum = Utils.fillZeros(sum, this.computer.arch.bits);
 
         //ZERO FLAG
         let EQU_ZERO = true;
 
         for (let bit of sum) {
-            if (bit) EQU_ZERO = false;
-            break;
+            if (bit) {
+                EQU_ZERO = false;
+                break;
+            }
         }
+        
+        this.computer.status_reg.ZERO = EQU_ZERO;
 
-        if (!this.computer.status_reg.CARRY && EQU_ZERO)
-            this.computer.status_reg.ZERO = true;
+
+        //SIGN FLAG
+
+        this.computer.status_reg.SIGN = sum[0];
+
 
         return sum;
     }
 
     complement(a: byte) : byte {
-        for (let i = 0; i < a.length; i++)
-            a[i] = !a[i];
 
-        return a;
+        let copy = a.slice();
+
+        for (let i = 0; i < a.length; i++)
+            copy[i] = !copy[i];
+
+        return Utils.fillZeros(copy, this.computer.arch.bits);
     }
 
     negate(a: byte) : byte { //negate (two's complement)
 
-        return this.add(this.complement(a), [true]); //complement and add 1
+        return this.add(this.complement(Utils.fillZeros(a, this.computer.arch.bits)), [true]); //complement and add 1
     }
 
     sub(a: byte, b: byte) : byte {

@@ -11,12 +11,28 @@
         <div id='computer'>
             <div id='program' style='float: left;'>
                 <textarea id='prog' style='height: auto; 1px solid #eee;'>
-;simple substraction
+;fibonacci sequence
 
-MOV %0, #1804
-SUB %0, #15
+;prints fib(15)
+MOV @4, #15 
+
+;init data
+MOV %0, #1
+MOV %1, #1
+MOV %2, #0
+MOV %3, #2
+JMP main
+
+main:
+INC %3
+MOV %2, %0
+ADD %0, %1
+MOV %1, %2
+CMP %3, @4
+JNEQ main
 OUT %0
-HLT            </textarea></br>
+HLT
+           </textarea></br>
 
                 hexdump</br>
                 <textarea id='binary'></textarea></br>

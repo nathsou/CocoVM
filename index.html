@@ -11,12 +11,14 @@
         <div id='computer'>
             <div id='program' style='float: left;'>
                 <textarea id='prog' style='height: auto; 1px solid #eee;'>
-MOV %0, #1789
-MOV @11, #33
-ADD %0, @11
-OUT %0
-HLT             </textarea></br>
+;simple substraction
 
+MOV %0, #1804
+SUB %0, #15
+OUT %0
+HLT            </textarea></br>
+
+                hexdump</br>
                 <textarea id='binary'></textarea></br>
 
                 <button onclick='assembleProg();'>Assemble</button>
@@ -41,13 +43,15 @@ HLT             </textarea></br>
                 RAM_bytes: 256 
             });
 
+            var prog_addr = 100;
+
             var editor = CodeMirror.fromTextArea(document.getElementById('prog'), {
                 lineNumbers: true
             });
 
             function assembleProg() {
                 let bin = computer.compile(editor.getValue());
-                computer.loadProgram(bin, 128);
+                computer.loadProgram(bin, prog_addr);
                 document.getElementById('binary').value = Utils.bits2hexstr(bin);
             }
 
@@ -56,12 +60,12 @@ HLT             </textarea></br>
             }
 
             function runProg() {
-                computer.run(false);
+                computer.run(prog_addr, true);
             }
 
             computer.on('OUT', function(value) {
 
-                value = Utils.bits2num(value);
+                value = computer.byte2num(value);
 
                 document.getElementById('console').value += `${value}\n`;
                 console.info(value);
@@ -71,7 +75,7 @@ HLT             </textarea></br>
                 console.warn(e);
                 alert(e);
             });
-            
+
         </script>
 
     </body>

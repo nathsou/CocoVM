@@ -35,8 +35,6 @@ Coco supports 3 addressing modes:
 
 to access the content of the nth register
 
-Syntax:
-
 ```asm
 MOV %0, %n
 ```
@@ -47,17 +45,13 @@ The 0th register ("%0") can be seen as the accumulator.
 
 to access the nth byte in RAM
 
-Syntax:
-
 ```asm
 MOV %0, #n
 ```
 
 ###immediate (#)
 
-to manipulate just a numerical value 
-
-Syntax:
+to use a numerical directly 
 
 ```asm
 MOV %0, #1789

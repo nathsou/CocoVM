@@ -1,3 +1,120 @@
+class ALU {
+    //Arithmetic
+    //1 bit full adder
+    static bitAdder(a, b, carry) {
+        let a_xor_b = this.xor(a, b);
+        return {
+            sum: this.xor(a_xor_b, carry),
+            carry: (a_xor_b && carry) || (a && b)
+        };
+    }
+    static add(a, b) {
+        let sum = [], carry = false;
+        let m = Math.max(a.length, b.length);
+        if (a.length !== m) {
+            a = Utils.fillZeros(a, m);
+        }
+        else
+            b = Utils.fillZeros(b, m);
+        for (let i = m - 1; i >= 0; i--) {
+            let s = this.bitAdder(a[i], b[i], carry);
+            sum.unshift(s.sum);
+            carry = s.carry;
+        }
+        if (carry)
+            sum.unshift(true);
+        return sum;
+    }
+    static mult(a, b) {
+        let mul = [false];
+        let i = [false];
+        while (ALU.lss(i, a)) {
+            mul = ALU.add(mul, b);
+            i = ALU.increment(i);
+        }
+        return mul;
+    }
+    static lss(a, b) {
+        if (a.length >= b.length)
+            Utils.fillZeros(b, a.length);
+        else
+            Utils.fillZeros(a, b.length);
+        for (let i = 0; i < a.length; i++) {
+            if (a[i] !== b[i]) {
+                if (a[i])
+                    return false;
+                else
+                    return true;
+            }
+        }
+        return false;
+    }
+    static leq(a, b) {
+        if (a.length >= b.length)
+            Utils.fillZeros(b, a.length);
+        else
+            Utils.fillZeros(a, b.length);
+        for (let i = 0; i < a.length; i++) {
+            if (a[i] !== b[i]) {
+                if (a[i])
+                    return false;
+                else
+                    return true;
+            }
+        }
+        return true;
+    }
+    static geq(a, b) {
+        return !this.lss(a, b);
+    }
+    static gtr(a, b) {
+        return !this.leq(a, b);
+    }
+    static equ(a, b) {
+        if (a.length >= b.length)
+            Utils.fillZeros(b, a.length);
+        else
+            Utils.fillZeros(a, b.length);
+        for (let i = 0; i < a.length; i++)
+            if (a[i] !== b[i])
+                return false;
+        return true;
+    }
+    static increment(a) {
+        return this.add(a, [true]);
+    }
+    static complement(a, byteLength) {
+        let copy = a.slice();
+        for (let i = 0; i < a.length; i++)
+            copy[i] = !copy[i];
+        return Utils.fillZeros(copy, byteLength);
+    }
+    static negate(a, byteLength) {
+        return this.add(this.complement(Utils.fillZeros(a, byteLength), byteLength), [true]); //complement and add 1
+    }
+    static sub(a, b, byteLength) {
+        return this.add(a, this.negate(b, byteLength));
+    }
+    //Logic
+    static not(a) {
+        return !a;
+    }
+    static and(a, b) {
+        return a && b;
+    }
+    static or(a, b) {
+        return a || b;
+    }
+    static nand(a, b) {
+        return !(a && b);
+    }
+    static nor(a, b) {
+        return !(a || b);
+    }
+    static xor(a, b) {
+        return (a || b) && !(a && b);
+    }
+}
 let Utils = {
     byte2num: (a, byteLength) => {
         let b = '';
@@ -92,6 +209,7 @@ class EventEmitter {
         em.on(ev, (value) => this.emit(ev, value));
     }
 }
+/// <reference path="EventEmitter.ts" />
 class Memory extends EventEmitter {
     constructor(name = 'memory', byteLength, nb_bytes) {
         super();
@@ -125,7 +243,12 @@ class Memory extends EventEmitter {
         this.memory.clear();
     }
 }
-class Computer extends EventEmitter {
+/// <reference path="Utils.ts" />
+/// <reference path="Memory.ts" />
+/// <reference path="ALU.ts" />
+/// <reference path="Architecture.ts" />
+/// <reference path="EventEmitter.ts" />
+class Cpu extends EventEmitter {
     constructor(arch) {
         super();
         this.STEP_LIMIT = 100000;
@@ -592,122 +715,5 @@ class Computer extends EventEmitter {
         this.status_reg.ZERO = ALU.equ(a, [false]) || ALU.equ(b, [false]);
         this.status_reg.CARRY = mul.length > this.arch.bits;
         return mul.slice(0, this.arch.bits);
-    }
-}
-class ALU {
-    //Arithmetic
-    //1 bit full adder
-    static bitAdder(a, b, carry) {
-        let a_xor_b = this.xor(a, b);
-        return {
-            sum: this.xor(a_xor_b, carry),
-            carry: (a_xor_b && carry) || (a && b)
-        };
-    }
-    static add(a, b) {
-        let sum = [], carry = false;
-        let m = Math.max(a.length, b.length);
-        if (a.length !== m) {
-            a = Utils.fillZeros(a, m);
-        }
-        else
-            b = Utils.fillZeros(b, m);
-        for (let i = m - 1; i >= 0; i--) {
-            let s = this.bitAdder(a[i], b[i], carry);
-            sum.unshift(s.sum);
-            carry = s.carry;
-        }
-        if (carry)
-            sum.unshift(true);
-        return sum;
-    }
-    static mult(a, b) {
-        let mul = [false];
-        let i = [false];
-        while (ALU.lss(i, a)) {
-            mul = ALU.add(mul, b);
-            i = ALU.increment(i);
-        }
-        return mul;
-    }
-    static lss(a, b) {
-        if (a.length >= b.length)
-            Utils.fillZeros(b, a.length);
-        else
-            Utils.fillZeros(a, b.length);
-        for (let i = 0; i < a.length; i++) {
-            if (a[i] !== b[i]) {
-                if (a[i])
-                    return false;
-                else
-                    return true;
-            }
-        }
-        return false;
-    }
-    static leq(a, b) {
-        if (a.length >= b.length)
-            Utils.fillZeros(b, a.length);
-        else
-            Utils.fillZeros(a, b.length);
-        for (let i = 0; i < a.length; i++) {
-            if (a[i] !== b[i]) {
-                if (a[i])
-                    return false;
-                else
-                    return true;
-            }
-        }
-        return true;
-    }
-    static geq(a, b) {
-        return !this.lss(a, b);
-    }
-    static gtr(a, b) {
-        return !this.leq(a, b);
-    }
-    static equ(a, b) {
-        if (a.length >= b.length)
-            Utils.fillZeros(b, a.length);
-        else
-            Utils.fillZeros(a, b.length);
-        for (let i = 0; i < a.length; i++)
-            if (a[i] !== b[i])
-                return false;
-        return true;
-    }
-    static increment(a) {
-        return this.add(a, [true]);
-    }
-    static complement(a, byteLength) {
-        let copy = a.slice();
-        for (let i = 0; i < a.length; i++)
-            copy[i] = !copy[i];
-        return Utils.fillZeros(copy, byteLength);
-    }
-    static negate(a, byteLength) {
-        return this.add(this.complement(Utils.fillZeros(a, byteLength), byteLength), [true]); //complement and add 1
-    }
-    static sub(a, b, byteLength) {
-        return this.add(a, this.negate(b, byteLength));
-    }
-    //Logic
-    static not(a) {
-        return !a;
-    }
-    static and(a, b) {
-        return a && b;
-    }
-    static or(a, b) {
-        return a || b;
-    }
-    static nand(a, b) {
-        return !(a && b);
-    }
-    static nor(a, b) {
-        return !(a || b);
-    }
-    static xor(a, b) {
-        return (a || b) && !(a && b);
     }
 }

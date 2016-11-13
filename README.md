@@ -46,7 +46,7 @@ The 0th register ("%0") can be seen as the accumulator.
 to access the nth byte in RAM
 
 ```asm
-MOV %0, #n
+MOV %0, @n
 ```
 
 ###immediate (#)

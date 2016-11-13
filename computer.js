@@ -7,7 +7,7 @@ let Utils = {
         if (!a[0])
             return val; //it's positive
         //it's negative
-        return val - (1 << (byteLength - 1));
+        return val - Math.abs((1 << (byteLength - 1)));
     },
     num2byte: (a, byteLength) => {
         let b = [];
@@ -92,33 +92,37 @@ class EventEmitter {
         em.on(ev, (value) => this.emit(ev, value));
     }
 }
-class RAM extends EventEmitter {
-    constructor(byteLength, nb_bytes) {
+class Memory extends EventEmitter {
+    constructor(name = 'memory', byteLength, nb_bytes) {
         super();
+        this.name = name;
         this.byteLength = byteLength;
         this.capacity = nb_bytes;
+        this.zero = Utils.fillZeros(0, byteLength);
+        this.memory = new Map();
         this.clear();
     }
     read(addr) {
-        if (addr >= this.capacity)
-            this.emit('error', `Incorrect RAM address: ${addr}`);
-        if (this.memory[addr].length === 0)
-            return Utils.fillZeros(0, this.byteLength);
-        return this.memory[addr];
+        if (addr instanceof Array)
+            addr = Utils.bits2str(addr);
+        if (addr.length > this.byteLength)
+            this.emit('error', `Incorrect ${this.name} address: ${addr}`);
+        if (this.memory.get(addr) === undefined)
+            return this.zero.slice();
+        return this.memory.get(addr);
     }
     write(addr, value) {
-        if (addr >= this.capacity)
-            this.emit('error', `Incorrect RAM address: ${addr}`);
+        if (addr instanceof Array)
+            addr = Utils.bits2str(addr);
+        if (addr.length > this.byteLength)
+            this.emit('error', `Incorrect ${this.name} address: ${addr}`);
         if (value.length > this.byteLength)
-            this.emit('error', `Cannot store ${value.length} bits of data in RAM, since 1 byte = ${this.byteLength}`);
-        else if (value.length < this.byteLength)
-            value = Utils.fillZeros(value, this.byteLength);
-        this.memory[addr] = value;
+            this.emit('error', `Cannot store ${value.length} bits of data in ${this.name}, since 1 byte = ${this.byteLength}`);
+        else
+            this.memory.set(addr, Utils.fillZeros(value, this.byteLength));
     }
     clear() {
-        this.memory = [];
-        for (let i = 0; i < this.capacity; i++)
-            this.memory[i] = [];
+        this.memory.clear();
     }
 }
 class Computer extends EventEmitter {
@@ -173,19 +177,21 @@ class Computer extends EventEmitter {
             'SIGN': false
         };
         this.arch = arch;
-        if (this.arch.registerCount < 1)
+        if (this.arch.register_count < 1)
             this.emit('error', 'There must be at least two registers (arch.registerCount)');
         if (this.arch.bits < 1)
             this.emit('error', 'Incorrect byte length: ' + this.arch.bits);
-        this.registers = [];
-        for (let i = 0; i < arch.registerCount; i++)
-            this.registers[i] = [];
-        this.RAM = new RAM(arch.bits, arch.RAM_bytes);
+        //Memory
+        this.registers = new Memory('register', arch.bits, arch.register_count);
+        this.RAM = new Memory('RAM', arch.bits, arch.RAM_bytes);
+        this.bindEvent(this.registers, 'error');
         this.bindEvent(this.RAM, 'error');
-        this.PC = 0;
-        this.ALU = new ALU(this);
+        this.PC = [];
+        this.IR = [];
     }
     toByte(n) {
+        if (n instanceof Array)
+            return Utils.fillZeros(n, this.arch.bits);
         return Utils.fillZeros(Utils.num2byte(n, this.arch.bits), this.arch.bits);
     }
     compile(prog) {
@@ -273,8 +279,11 @@ class Computer extends EventEmitter {
     }
     loadProgram(prog, addr) {
         if (!(prog instanceof String)) {
-            for (let i = 0; i < prog.length; i += this.arch.bits)
-                this.RAM.write(addr + i / this.arch.bits, prog.slice(i, i + this.arch.bits));
+            let c = Utils.num2byte(addr, this.arch.bits);
+            for (let i = 0; i < prog.length; i += this.arch.bits) {
+                this.RAM.write(c, prog.slice(i, i + this.arch.bits));
+                c = ALU.increment(c);
+            }
         }
         else
             this.loadProgram(Utils.str2bits(prog), addr);
@@ -291,213 +300,218 @@ class Computer extends EventEmitter {
                 this.running = false;
                 break;
             case this.opcodes['MOV%%']:
-                a = this.byte2num(this.RAM.read(this.PC + 1)),
-                    b = this.byte2num(this.RAM.read(this.PC + 2));
+                a = this.RAM.read(ALU.increment(this.PC)),
+                    b = this.RAM.read(ALU.add(this.PC, [true, false]));
                 this.setRegister(a, this.getRegister(b));
-                this.PC += 3;
+                this.jump(1);
                 break;
             case this.opcodes['MOV%#']:
-                a = this.byte2num(this.RAM.read(this.PC + 1)),
-                    b = this.RAM.read(this.PC + 2);
+                a = this.RAM.read(ALU.increment(this.PC)),
+                    b = this.RAM.read(ALU.add(this.PC, [true, false]));
                 this.setRegister(a, b);
-                this.PC += 3;
+                this.jump(1);
                 break;
             case this.opcodes['MOV%@']:
-                a = this.byte2num(this.RAM.read(this.PC + 1)),
-                    b = this.byte2num(this.RAM.read(this.PC + 2));
+                a = this.RAM.read(ALU.increment(this.PC)),
+                    b = this.RAM.read(ALU.add(this.PC, [true, false]));
                 this.setRegister(a, this.RAM.read(b));
-                this.PC += 3;
+                this.jump(1);
                 break;
             case this.opcodes['MOV@#']:
-                a = this.byte2num(this.RAM.read(this.PC + 1)),
-                    b = this.RAM.read(this.PC + 2);
-                this.PC += 3;
+                a = this.RAM.read(ALU.increment(this.PC)),
+                    b = this.RAM.read(ALU.add(this.PC, [true, false]));
+                this.jump(1);
                 this.RAM.write(a, b);
                 break;
             case this.opcodes['MOV@%']:
-                a = this.byte2num(this.RAM.read(this.PC + 1)),
-                    b = this.byte2num(this.RAM.read(this.PC + 2));
+                a = this.RAM.read(ALU.increment(this.PC)),
+                    b = this.RAM.read(ALU.add(this.PC, [true, false]));
                 this.RAM.write(a, this.getRegister(b));
-                this.PC += 3;
+                this.jump(1);
                 break;
             case this.opcodes['MOV%#']:
-                a = this.byte2num(this.RAM.read(this.PC + 1)),
-                    b = this.RAM.read(this.PC + 2);
+                a = this.RAM.read(ALU.increment(this.PC)),
+                    b = this.RAM.read(ALU.add(this.PC, [true, false]));
                 this.setRegister(a, b);
-                this.PC += 3;
+                this.jump(1);
                 break;
             case this.opcodes['OUT%']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
+                a = this.RAM.read(ALU.increment(this.PC));
                 this.emit('OUT', this.getRegister(a));
-                this.PC += 3;
+                this.jump(1);
                 break;
             case this.opcodes['OUT@']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
+                a = this.RAM.read(ALU.increment(this.PC));
                 this.emit('OUT', this.RAM.read(a));
-                this.PC += 3;
+                this.jump(1);
                 break;
             case this.opcodes['ADD%#']:
-                a = this.byte2num(this.RAM.read(this.PC + 1)),
-                    b = this.RAM.read(this.PC + 2);
-                this.setRegister(a, this.ALU.add(this.getRegister(a), b));
-                this.PC += 3;
+                a = this.RAM.read(ALU.increment(this.PC)),
+                    b = this.RAM.read(ALU.add(this.PC, [true, false]));
+                this.setRegister(a, this.add(this.getRegister(a), b));
+                this.jump(1);
                 break;
             case this.opcodes['ADD%%']:
-                a = this.byte2num(this.RAM.read(this.PC + 1)),
-                    b = this.byte2num(this.RAM.read(this.PC + 2));
-                this.setRegister(a, this.ALU.add(this.getRegister(a), this.getRegister(b)));
-                this.PC += 3;
+                a = this.RAM.read(ALU.increment(this.PC)),
+                    b = this.RAM.read(ALU.add(this.PC, [true, false]));
+                this.setRegister(a, this.add(this.getRegister(a), this.getRegister(b)));
+                this.jump(1);
                 break;
             case this.opcodes['ADD%@']:
-                a = this.byte2num(this.RAM.read(this.PC + 1)),
-                    b = this.byte2num(this.RAM.read(this.PC + 2));
-                this.setRegister(a, this.ALU.add(this.getRegister(a), this.RAM.read(b)));
-                this.PC += 3;
+                a = this.RAM.read(ALU.increment(this.PC)),
+                    b = this.RAM.read(ALU.add(this.PC, [true, false]));
+                this.setRegister(a, this.add(this.getRegister(a), this.RAM.read(b)));
+                this.jump(1);
                 break;
             case this.opcodes['SUB%#']:
-                a = this.byte2num(this.RAM.read(this.PC + 1)),
-                    b = this.RAM.read(this.PC + 2);
-                this.setRegister(a, this.ALU.sub(this.getRegister(a), b));
-                this.PC += 3;
+                a = this.RAM.read(ALU.increment(this.PC)),
+                    b = this.RAM.read(ALU.add(this.PC, [true, false]));
+                this.setRegister(a, this.sub(this.getRegister(a), b));
+                this.jump(1);
                 break;
             case this.opcodes['SUB%%']:
-                a = this.byte2num(this.RAM.read(this.PC + 1)),
-                    b = this.byte2num(this.RAM.read(this.PC + 2));
-                this.setRegister(a, this.ALU.sub(this.getRegister(a), this.getRegister(b)));
-                this.PC += 3;
+                a = this.RAM.read(ALU.increment(this.PC)),
+                    b = this.RAM.read(ALU.add(this.PC, [true, false]));
+                this.setRegister(a, this.sub(this.getRegister(a), this.getRegister(b)));
+                this.jump(1);
                 break;
             case this.opcodes['SUB%@']:
-                a = this.byte2num(this.RAM.read(this.PC + 1)),
-                    b = this.byte2num(this.RAM.read(this.PC + 2));
-                this.setRegister(a, this.ALU.sub(this.getRegister(a), this.RAM.read(b)));
-                this.PC += 3;
+                a = this.RAM.read(ALU.increment(this.PC)),
+                    b = this.RAM.read(ALU.add(this.PC, [true, false]));
+                this.setRegister(a, this.sub(this.getRegister(a), this.RAM.read(b)));
+                this.jump(1);
                 break;
             case this.opcodes['INC%']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
-                this.setRegister(a, this.ALU.add(this.getRegister(a), [true]));
-                this.PC += 3;
+                a = this.RAM.read(ALU.increment(this.PC));
+                this.setRegister(a, this.add(this.getRegister(a), [true]));
+                this.jump(1);
                 break;
             case this.opcodes['DEC%']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
-                this.setRegister(a, this.ALU.sub(this.getRegister(a), [true]));
-                this.PC += 3;
+                a = this.RAM.read(ALU.increment(this.PC));
+                this.setRegister(a, this.sub(this.getRegister(a), [true]));
+                this.jump(1);
                 break;
             case this.opcodes['CMP%%']:
-                a = this.byte2num(this.RAM.read(this.PC + 1)),
-                    b = this.byte2num(this.RAM.read(this.PC + 2));
-                this.ALU.sub(this.getRegister(a), this.getRegister(b));
-                this.PC += 3;
+                a = this.RAM.read(ALU.increment(this.PC)),
+                    b = this.RAM.read(ALU.add(this.PC, [true, false]));
+                this.sub(this.getRegister(a), this.getRegister(b));
+                this.jump(1);
                 break;
             case this.opcodes['CMP%@']:
-                a = this.byte2num(this.RAM.read(this.PC + 1)),
-                    b = this.byte2num(this.RAM.read(this.PC + 2));
-                this.ALU.sub(this.getRegister(a), this.RAM.read(b));
-                this.PC += 3;
+                a = this.RAM.read(ALU.increment(this.PC)),
+                    b = this.RAM.read(ALU.add(this.PC, [true, false]));
+                this.sub(this.getRegister(a), this.RAM.read(b));
+                this.jump(1);
                 break;
             case this.opcodes['CMP%#']:
-                a = this.byte2num(this.RAM.read(this.PC + 1)),
-                    b = this.RAM.read(this.PC + 2);
-                this.ALU.sub(this.getRegister(a), b);
-                let c = Utils.byte2num(b, 16);
-                this.PC += 3;
+                a = this.RAM.read(ALU.increment(this.PC)),
+                    b = this.RAM.read(ALU.add(this.PC, [true, false]));
+                this.sub(this.getRegister(a), b);
+                this.jump(1);
                 break;
             case this.opcodes['JMP%']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
+                a = this.RAM.read(ALU.increment(this.PC));
                 this.PC = a;
                 break;
             case this.opcodes['JMP!']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
-                this.PC += 3 * a;
+                a = this.RAM.read(ALU.increment(this.PC));
+                this.jump(a);
                 break;
             case this.opcodes['JC%']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
+                a = this.RAM.read(ALU.increment(this.PC));
                 if (this.status_reg.CARRY)
                     this.PC = a;
                 else
-                    this.PC += 3;
+                    this.jump(1);
                 break;
             case this.opcodes['JC!']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
+                a = this.RAM.read(ALU.increment(this.PC));
                 if (this.status_reg.CARRY)
-                    this.PC += 3 * a;
+                    this.jump(a);
                 else
-                    this.PC += 3;
+                    this.jump(1);
                 break;
             case this.opcodes['JNC%']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
+                a = this.RAM.read(ALU.increment(this.PC));
                 if (!this.status_reg.CARRY)
                     this.PC = a;
                 else
-                    this.PC += 3;
+                    this.jump(1);
                 break;
             case this.opcodes['JNC!']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
+                a = this.RAM.read(ALU.increment(this.PC));
                 if (!this.status_reg.CARRY)
-                    this.PC += 3 * a;
+                    this.jump(a);
                 else
-                    this.PC += 3;
+                    this.jump(1);
                 break;
             case this.opcodes['JEQ%']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
+                a = this.RAM.read(ALU.increment(this.PC));
                 if (this.status_reg.ZERO)
                     this.PC = a;
                 else
-                    this.PC += 3;
+                    this.jump(1);
                 break;
             case this.opcodes['JEQ!']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
+                a = this.RAM.read(ALU.increment(this.PC));
                 if (this.status_reg.ZERO)
-                    this.PC += 3 * a;
+                    this.jump(a);
                 else
-                    this.PC += 3;
+                    this.jump(1);
                 break;
             case this.opcodes['JNEQ%']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
+                a = this.RAM.read(ALU.increment(this.PC));
                 if (!this.status_reg.ZERO)
                     this.PC = a;
                 else
-                    this.PC += 3;
+                    this.jump(1);
                 break;
             case this.opcodes['JNEQ!']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
+                a = this.RAM.read(ALU.increment(this.PC));
                 if (!this.status_reg.ZERO)
-                    this.PC += 3 * a;
+                    this.jump(a);
                 else
-                    this.PC += 3;
+                    this.jump(1);
                 break;
             case this.opcodes['JGTR%']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
+                a = this.RAM.read(ALU.increment(this.PC));
                 if (!this.status_reg.SIGN)
                     this.PC = a;
                 else
-                    this.PC += 3;
+                    this.jump(3);
                 break;
             case this.opcodes['JGTR!']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
+                a = this.RAM.read(ALU.increment(this.PC));
                 if (!this.status_reg.SIGN)
-                    this.PC += 3 * a;
+                    this.jump(a);
                 else
-                    this.PC += 3;
+                    this.jump(3);
                 break;
             case this.opcodes['JLSS%']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
+                a = this.RAM.read(ALU.increment(this.PC));
                 if (this.status_reg.SIGN)
                     this.PC = a;
                 else
-                    this.PC += 3;
+                    this.jump(3);
                 break;
             case this.opcodes['JLSS!']:
-                a = this.byte2num(this.RAM.read(this.PC + 1));
+                a = this.RAM.read(ALU.increment(this.PC));
                 if (this.status_reg.SIGN)
-                    this.PC += 3 * a;
+                    this.jump(a);
                 else
-                    this.PC += 3;
+                    this.jump(3);
                 break;
         }
         this.emit('step', this.PC);
     }
+    jump(relative) {
+        if (relative instanceof Array)
+            this.PC = this.add(this.PC, this.mult(relative, [true, true]), false);
+        else
+            this.PC = this.add(this.PC, Utils.num2byte(relative * 3, this.arch.bits), false);
+    }
     run(addr, clean = true) {
-        this.PC = addr;
+        this.PC = Utils.num2byte(addr, this.arch.bits);
         this.running = true;
         this.emit('run');
         let steps = 0;
@@ -509,25 +523,20 @@ class Computer extends EventEmitter {
             }
         }
         if (clean)
-            this.reset(true);
+            this.reset(false);
     }
-    getRegister(n) {
-        if (n >= this.arch.registerCount)
-            this.emit('error', 'Invalid register address: ' + n);
-        return this.registers[n];
+    getRegister(addr) {
+        return this.registers.read(addr);
     }
-    setRegister(n, value) {
-        if (n >= this.arch.registerCount)
-            this.emit('error', 'Invalid register address: ' + n);
-        this.registers[n] = value;
+    setRegister(addr, value) {
+        this.registers.write(addr, value);
     }
     reset(clearRAM = true) {
-        for (let i = 0; i < this.arch.registerCount; i++)
-            this.registers[i] = [];
+        this.registers.clear();
         if (clearRAM)
             this.RAM.clear();
         this.status_reg = { CARRY: false, ZERO: false, SIGN: false };
-        this.PC = 0;
+        this.PC = [];
         this.IR = [];
         this.running = false;
         this.emit('reset');
@@ -537,21 +546,65 @@ class Computer extends EventEmitter {
         this.running = false;
         this.emit('error', msg);
     }
+    add(a, b, flags = true) {
+        let sum = ALU.add(a, b);
+        if (sum.length > this.arch.bits)
+            sum = sum.slice(1, this.arch.bits + 1);
+        if (flags) {
+            //CARRY FLAG
+            this.status_reg.CARRY = sum.length > this.arch.bits;
+            //ZERO FLAG
+            let EQU_ZERO = true;
+            for (let bit of sum) {
+                if (bit) {
+                    EQU_ZERO = false;
+                    break;
+                }
+            }
+            this.status_reg.ZERO = EQU_ZERO;
+            //SIGN FLAG
+            this.status_reg.SIGN = sum[0];
+        }
+        return this.toByte(sum);
+    }
+    sub(a, b) {
+        let res = this.add(this.toByte(a), ALU.negate(b, this.arch.bits));
+        return res;
+    }
+    mult(a, b) {
+        a = this.toByte(a);
+        b = this.toByte(b);
+        let neg = a[0] !== b[0];
+        if (neg) {
+            if (a[0])
+                a = ALU.negate(a, this.arch.bits);
+            else
+                b = ALU.negate(b, this.arch.bits);
+        }
+        let mul = [false];
+        let i = [false];
+        while (ALU.lss(i, a)) {
+            mul = this.add(mul, b);
+            i = ALU.increment(i);
+        }
+        if (neg)
+            mul = ALU.negate(mul, this.arch.bits);
+        this.status_reg.ZERO = ALU.equ(a, [false]) || ALU.equ(b, [false]);
+        this.status_reg.CARRY = mul.length > this.arch.bits;
+        return mul.slice(0, this.arch.bits);
+    }
 }
 class ALU {
-    constructor(computer) {
-        this.computer = computer;
-    }
     //Arithmetic
     //1 bit full adder
-    bitAdder(a, b, carry) {
+    static bitAdder(a, b, carry) {
         let a_xor_b = this.xor(a, b);
         return {
             sum: this.xor(a_xor_b, carry),
             carry: (a_xor_b && carry) || (a && b)
         };
     }
-    add(a, b) {
+    static add(a, b) {
         let sum = [], carry = false;
         let m = Math.max(a.length, b.length);
         if (a.length !== m) {
@@ -564,64 +617,97 @@ class ALU {
             sum.unshift(s.sum);
             carry = s.carry;
         }
-        //CARRY FLAG
-        if (carry) {
-            if (sum.length < this.computer.arch.bits) {
-                sum.push(true);
-            }
-            else {
-                let c = true;
-                for (let i = 1; i < sum.length; i++) {
-                    if (!sum[i])
-                        c = false;
-                    break;
-                }
-                this.computer.status_reg.CARRY = c;
-            }
-        }
-        sum = Utils.fillZeros(sum, this.computer.arch.bits);
-        //ZERO FLAG
-        let EQU_ZERO = true;
-        for (let bit of sum) {
-            if (bit) {
-                EQU_ZERO = false;
-                break;
-            }
-        }
-        this.computer.status_reg.ZERO = EQU_ZERO;
-        //SIGN FLAG
-        this.computer.status_reg.SIGN = sum[0];
+        if (carry)
+            sum.unshift(true);
         return sum;
     }
-    complement(a) {
+    static mult(a, b) {
+        let mul = [false];
+        let i = [false];
+        while (ALU.lss(i, a)) {
+            mul = ALU.add(mul, b);
+            i = ALU.increment(i);
+        }
+        return mul;
+    }
+    static lss(a, b) {
+        if (a.length >= b.length)
+            Utils.fillZeros(b, a.length);
+        else
+            Utils.fillZeros(a, b.length);
+        for (let i = 0; i < a.length; i++) {
+            if (a[i] !== b[i]) {
+                if (a[i])
+                    return false;
+                else
+                    return true;
+            }
+        }
+        return false;
+    }
+    static leq(a, b) {
+        if (a.length >= b.length)
+            Utils.fillZeros(b, a.length);
+        else
+            Utils.fillZeros(a, b.length);
+        for (let i = 0; i < a.length; i++) {
+            if (a[i] !== b[i]) {
+                if (a[i])
+                    return false;
+                else
+                    return true;
+            }
+        }
+        return true;
+    }
+    static geq(a, b) {
+        return !this.lss(a, b);
+    }
+    static gtr(a, b) {
+        return !this.leq(a, b);
+    }
+    static equ(a, b) {
+        if (a.length >= b.length)
+            Utils.fillZeros(b, a.length);
+        else
+            Utils.fillZeros(a, b.length);
+        for (let i = 0; i < a.length; i++)
+            if (a[i] !== b[i])
+                return false;
+        return true;
+    }
+    static increment(a) {
+        return this.add(a, [true]);
+    }
+    static complement(a, byteLength) {
         let copy = a.slice();
         for (let i = 0; i < a.length; i++)
             copy[i] = !copy[i];
-        return Utils.fillZeros(copy, this.computer.arch.bits);
+        return Utils.fillZeros(copy, byteLength);
     }
-    negate(a) {
-        return this.add(this.complement(Utils.fillZeros(a, this.computer.arch.bits)), [true]); //complement and add 1
+    static negate(a, byteLength) {
+        return this.add(this.complement(Utils.fillZeros(a, byteLength), byteLength), [true]); //complement and add 1
     }
-    sub(a, b) {
-        return this.add(a, this.negate(b));
+    static sub(a, b, byteLength) {
+        return this.add(a, this.negate(b, byteLength));
     }
     //Logic
-    not(a) {
+    static not(a) {
         return !a;
     }
-    and(a, b) {
+    static and(a, b) {
         return a && b;
     }
-    or(a, b) {
+    static or(a, b) {
         return a || b;
     }
-    nand(a, b) {
+    static nand(a, b) {
         return !(a && b);
     }
-    nor(a, b) {
+    static nor(a, b) {
         return !(a || b);
     }
-    xor(a, b) {
+    static xor(a, b) {
         return (a || b) && !(a && b);
     }
 }

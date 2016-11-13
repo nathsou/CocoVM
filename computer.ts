@@ -746,7 +746,7 @@ class Computer extends EventEmitter {
                 a = this.RAM.read(ALU.increment(this.PC));
 
                 if (!this.status_reg.SIGN) this.PC = a;
-                else this.jump(3);
+                else this.jump(1);
 
                 break;
 
@@ -755,7 +755,7 @@ class Computer extends EventEmitter {
                 a = this.RAM.read(ALU.increment(this.PC));
 
                 if (!this.status_reg.SIGN) this.jump(a);
-                else this.jump(3);
+                else this.jump(1);
 
                 break;
 
@@ -764,7 +764,7 @@ class Computer extends EventEmitter {
                 a = this.RAM.read(ALU.increment(this.PC));
 
                 if (this.status_reg.SIGN) this.PC = a;
-                else this.jump(3);
+                else this.jump(1);
 
                 break;
 
@@ -773,7 +773,7 @@ class Computer extends EventEmitter {
                 a = this.RAM.read(ALU.increment(this.PC));
 
                 if (this.status_reg.SIGN) this.jump(a);
-                else this.jump(3);
+                else this.jump(1);
 
                 break;
         }

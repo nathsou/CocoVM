@@ -478,28 +478,28 @@ class Computer extends EventEmitter {
                 if (!this.status_reg.SIGN)
                     this.PC = a;
                 else
-                    this.jump(3);
+                    this.jump(1);
                 break;
             case this.opcodes['JGTR!']:
                 a = this.RAM.read(ALU.increment(this.PC));
                 if (!this.status_reg.SIGN)
                     this.jump(a);
                 else
-                    this.jump(3);
+                    this.jump(1);
                 break;
             case this.opcodes['JLSS%']:
                 a = this.RAM.read(ALU.increment(this.PC));
                 if (this.status_reg.SIGN)
                     this.PC = a;
                 else
-                    this.jump(3);
+                    this.jump(1);
                 break;
             case this.opcodes['JLSS!']:
                 a = this.RAM.read(ALU.increment(this.PC));
                 if (this.status_reg.SIGN)
                     this.jump(a);
                 else
-                    this.jump(3);
+                    this.jump(1);
                 break;
         }
         this.emit('step', this.PC);

@@ -13,8 +13,8 @@
                 <textarea id='prog' style='height: auto; 1px solid #eee;'>
 ;fibonacci sequence
 
-;prints fib(15)
-MOV @4, #15 
+;prints fib(42)
+MOV @0, #42 
 
 ;init data
 MOV %0, #1
@@ -28,7 +28,7 @@ INC %3
 MOV %2, %0
 ADD %0, %1
 MOV %1, %2
-CMP %3, @4
+CMP %3, @0
 JNEQ main
 OUT %0
 HLT

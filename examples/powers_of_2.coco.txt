@@ -1,0 +1,15 @@
+;outpus powers of two
+
+;init data
+;up to 2^11
+MOV %0, #11
+MOV %1, #1
+MOV %2, #-1
+
+main:
+INC %2
+OUT %1
+ADD %1, %1
+CMP %2, %0
+JNEQ main
+HLT

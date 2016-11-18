@@ -284,8 +284,8 @@ class Cpu extends EventEmitter {
             'JEQ!': 21,
             'JNZ%': 26,
             'JNZ!': 27,
-            'JNEQ%': 22,
-            'JNEQ!': 28,
+            'JNE%': 22,
+            'JNE!': 28,
             'DEC%': 29,
             'JGTR%': 30,
             'JGTR!': 31,
@@ -582,14 +582,14 @@ class Cpu extends EventEmitter {
                 else
                     this.jump(1);
                 break;
-            case this.opcodes['JNEQ%']:
+            case this.opcodes['JNE%']:
                 a = this.RAM.read(ALU.increment(this.PC));
                 if (!this.status_reg.ZERO)
                     this.PC = a;
                 else
                     this.jump(1);
                 break;
-            case this.opcodes['JNEQ!']:
+            case this.opcodes['JNE!']:
                 a = this.RAM.read(ALU.increment(this.PC));
                 if (!this.status_reg.ZERO)
                     this.jump(a);

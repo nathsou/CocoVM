@@ -45,8 +45,8 @@ class Cpu extends EventEmitter {
         'JEQ!': 21,
         'JNZ%': 26, //jump if zero flag is false
         'JNZ!': 27,
-        'JNEQ%': 22, //jump if not equal
-        'JNEQ!': 28,
+        'JNE%': 22, //jump if not equal
+        'JNE!': 28,
         'DEC%': 29,
         'JGTR%': 30,
         'JGTR!': 31,
@@ -522,7 +522,7 @@ class Cpu extends EventEmitter {
 
                 break;
 
-            case this.opcodes['JNEQ%']:
+            case this.opcodes['JNE%']:
 
                 a = this.RAM.read(ALU.increment(this.PC));
 
@@ -531,7 +531,7 @@ class Cpu extends EventEmitter {
 
                 break;
 
-            case this.opcodes['JNEQ!']:
+            case this.opcodes['JNE!']:
 
                 a = this.RAM.read(ALU.increment(this.PC));
 

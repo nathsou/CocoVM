@@ -1,3 +1,5 @@
+/// <reference path="Utils.ts" />
+
 abstract class ALU { //Arithmetic-logic unit
 
     //Arithmetic
@@ -13,7 +15,7 @@ abstract class ALU { //Arithmetic-logic unit
         };
     }
 
-    static add(a: byte, b: byte) : byte {
+    static add(a: byte, b: byte) : byte { //binary adder
 
         let sum: bits = [],
             carry = false;
@@ -37,18 +39,21 @@ abstract class ALU { //Arithmetic-logic unit
         return sum;
     }
 
-    static mult(a: byte, b: byte) : byte {
 
-        let mul = [false];
+    static mult(a: byte, b: byte) : byte { //binary multiplier
 
-        let i = [false];
+        let m = Math.max(a.length, b.length);
 
-        while (ALU.lss(i, a)) {
-            mul = ALU.add(mul, b);
-            i = ALU.increment(i);
+        let a_ = Utils.fillZeros(a.slice(), m);
+
+        let sum = [false]; //0
+
+        for (let i = m - 1; i >= 0; i--) {
+            if (b[i]) sum = ALU.add(sum, a_); 
+            a_ = ALU.shiftLeft(a_);
         }
 
-        return mul;
+        return sum;
 
     }
 
@@ -129,13 +134,44 @@ abstract class ALU { //Arithmetic-logic unit
         return this.add(a, this.negate(b, byteLength));
     }
 
+    static shiftLeft(a: byte) : byte {
+        
+        let copy = a.slice();
+        copy.push(false);
+
+        return copy;
+    }
+
+    static shiftRight(a: byte) : byte {
+        
+        let copy = a.slice();
+        copy.pop();
+        copy.unshift(false);
+
+        return copy;
+    }
+
     //Logic
 
     static not(a: bit) : bit {
         return !a;
     }
 
-    static and(a: bit, b: bit) : bit {
+    static andMask(a: bits, mask: bits) : bits {
+        let r = [];
+
+        let m = Math.max(a.length, mask.length);
+
+        let a_ = Utils.fillZeros(a, m);
+        let mask_ = Utils.fillZeros(mask, m);
+
+        for (let i = 0; i < m; i++)
+            r.push(mask_[i] && a_[i]);
+
+        return r;
+    }
+ 
+    static and(a: bit | bits, b: bit) : bit {
         return a && b;
     }
 

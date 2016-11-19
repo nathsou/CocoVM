@@ -53,7 +53,10 @@ class Cpu extends EventEmitter {
         'JNGTR%': 32,
         'JNGTR!': 33,
         'JLSS%': 32,
-        'JLSS!': 33
+        'JLSS!': 33,
+        'MUL%%': 34,
+        'MUL%@': 35,
+        'MUL%#': 36
     };
 
     status_reg = {
@@ -399,6 +402,38 @@ class Cpu extends EventEmitter {
 
                 break; 
 
+            case this.opcodes['MUL%%']:
+                a = this.RAM.read(ALU.increment(this.PC)),
+                b = this.RAM.read(ALU.add(this.PC, [true, false]));
+
+                this.setRegister(a, this.mult(this.getRegister(a), this.getRegister(b)));
+
+                this.jump(1);
+
+                break;
+
+            case this.opcodes['MUL%#']:
+
+                a = this.RAM.read(ALU.increment(this.PC)),
+                b = this.RAM.read(ALU.add(this.PC, [true, false]));
+
+                this.setRegister(a, this.mult(this.getRegister(a), b));
+
+                this.jump(1);
+
+                break;
+
+            case this.opcodes['MUL%@']:
+
+                a = this.RAM.read(ALU.increment(this.PC)),
+                b = this.RAM.read(ALU.add(this.PC, [true, false]));
+
+                this.setRegister(a, this.mult(this.getRegister(a), this.RAM.read(b)));
+
+                this.jump(1);
+
+                break;
+
             case this.opcodes['INC%']:
 
                 a = this.RAM.read(ALU.increment(this.PC));
@@ -692,14 +727,7 @@ class Cpu extends EventEmitter {
             else b = ALU.negate(b, this.arch.bits);
         }
 
-        let mul = [false];
-
-        let i = [false];
-
-        while (ALU.lss(i, a)) {
-            mul = this.add(mul, b);
-            i = ALU.increment(i);
-        }
+        let mul = ALU.mult(a, b);
 
         if (neg) mul = ALU.negate(mul, this.arch.bits);
 
@@ -707,7 +735,7 @@ class Cpu extends EventEmitter {
 
         this.status_reg.CARRY = mul.length > this.arch.bits;
 
-        return mul.slice(0, this.arch.bits);
+        return mul.splice(mul.length - this.arch.bits, this.arch.bits);
     }
 
 

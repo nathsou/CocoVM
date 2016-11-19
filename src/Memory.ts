@@ -1,5 +1,5 @@
 /// <reference path="EventEmitter.ts" />
-
+/// <reference path="Utils.ts" />
 
 class Memory extends EventEmitter {
 

@@ -1,8 +1,8 @@
-    ;data
-    MOV %0, #-33
-    MOV %1, #723920
+;data
+MOV %0, #-33
+MOV %1, #723920
+
+MUL %0, %1 ;multiply
+OUT %0 ;print
+HLT ;terminate
     
-    MUL %0, %1 ;multiply
-    OUT %0 ;print
-    HLT ;terminate
-        

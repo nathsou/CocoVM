@@ -21,7 +21,7 @@ MOV %2, %0
 ADD %0, %1
 MOV %1, %2
 CMP %3, @4
-JNEQ main
+JNE main
 OUT %0
 HLT
            

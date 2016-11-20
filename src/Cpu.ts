@@ -10,6 +10,7 @@ class Cpu extends EventEmitter {
     arch: Architecture;
     PC: bits; //Program Counter -> addr of the current instruction
     IR: bits; //Instruction Register -> stores the current instruction's opcode 
+    SP: bits; //Stack Pointer
     registers: Memory;
     RAM: Memory;
     running: boolean = false;
@@ -56,7 +57,14 @@ class Cpu extends EventEmitter {
         'JLSS!': 33,
         'MUL%%': 34,
         'MUL%@': 35,
-        'MUL%#': 36
+        'MUL%#': 36,
+        'PUSH%': 37,
+        'PUSH@': 38,
+        'PUSH#': 39,
+        'POP%': 40,
+        'POP@': 41,
+        'CALL!': 42,
+        'RET': 43
     };
 
     status_reg = {
@@ -87,6 +95,7 @@ class Cpu extends EventEmitter {
 
         this.PC = [];
         this.IR = [];
+        this.SP = this.toByte(arch.RAM_bytes - 1);
     }
 
     private toByte(n: number | bits) {
@@ -111,6 +120,13 @@ class Cpu extends EventEmitter {
             inst = inst.trim();
 
             if (inst === '' || inst[0] === ';') continue;
+
+            //remove inline comments
+
+            if (inst.match(/;.*/)) {
+                for (let comment of (/;.*/.exec(inst)))
+                    inst = inst.replace(comment, '');
+            }
 
             let label: string[];
 
@@ -238,7 +254,7 @@ class Cpu extends EventEmitter {
         
         this.IR = this.RAM.read(this.PC);
 
-        let opcode = this.byte2num(this.IR);
+        let opcode = this.byte2num(this.IR); //TODO
         let a, b;
 
 
@@ -610,10 +626,88 @@ class Cpu extends EventEmitter {
                 else this.jump(1);
 
                 break;
+
+            case this.opcodes['PUSH%']:
+
+                a = this.RAM.read(ALU.increment(this.PC));
+
+                this.push(this.registers.read(a));
+
+                this.jump(1);
+
+                 break;
+
+            case this.opcodes['PUSH@']:
+
+                a = this.RAM.read(ALU.increment(this.PC));
+
+                this.push(this.RAM.read(a));
+
+                this.jump(1);
+
+                break;
+
+            case this.opcodes['PUSH#']:
+
+                a = this.RAM.read(ALU.increment(this.PC));
+
+                this.push(a);
+
+                this.jump(1);
+
+                break;
+
+            case this.opcodes['POP%']:
+
+                a = this.RAM.read(ALU.increment(this.PC));
+
+                this.registers.write(a, this.pop());
+
+                this.jump(1);
+
+                break;
+
+            case this.opcodes['POP@']:
+
+                a = this.RAM.read(ALU.increment(this.PC));
+
+                this.RAM.write(a, this.pop());
+
+                this.jump(1);
+
+                break;
+
+            case this.opcodes['CALL!']:
+
+                a = this.RAM.read(ALU.increment(this.PC));
+
+                this.push(this.PC);
+
+                this.jump(a);
+
+                break;
+
+            case this.opcodes['RET']:
+
+                this.jump(this.pop());
+
+                break;
         }
 
         
         this.emit('step', this.PC);
+    }
+
+    private push(a: byte) : void {
+        this.SP = this.sub(this.SP, [true]);
+        this.RAM.write(this.SP, a);
+    }
+
+    private pop() : byte {
+        let r = this.RAM.read(this.SP);
+        this.SP = ALU.increment(this.SP);
+
+        return r;
     }
 
     private jump(relative: byte | number) { //mult by 3, because each instruction is stored in 3 consecutive bytes

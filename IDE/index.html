@@ -31,11 +31,7 @@
     OUT %0
     HLT
         </div>
-        <ul class="tab">
-  <li><a href="javascript:void(0)" class="tablinks" onclick="openCity(event, 'London')">London</a></li>
-  <li><a href="javascript:void(0)" class="tablinks" onclick="openCity(event, 'Paris')">Paris</a></li>
-  <li><a href="javascript:void(0)" class="tablinks" onclick="openCity(event, 'Tokyo')">Tokyo</a></li>
-</ul>
+
         </div>
 
         <div id="debug" class="split split-horizontal">
@@ -87,10 +83,10 @@
     var computer = new Cpu({
         bits: 32,
         registerCount: 10,
-        RAM_bytes: 256 
+        RAM_bytes: 256
     });
 
-    var prog_addr = 100;
+    var prog_addr = 64;
 
     function assembleProg() {
         let prog = computer.compile(editor.getValue());

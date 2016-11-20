@@ -42,7 +42,7 @@ class Memory extends EventEmitter {
 
     write(addr: byte | string, value: bits): void {
 
-        if (addr instanceof Array)
+        if (addr instanceof Array) 
             addr = Utils.bits2str(addr);
 
         if (addr.length > this.byteLength)

@@ -2,7 +2,8 @@
     "compilerOptions": {
         "module": "commonjs",
         "target": "ES6",
-        "outFile": "computer.js"
+        "outFile": "IDE/computer.js",
+        "sourceMap": true
     },
     "exclude": [
         "node_modules"

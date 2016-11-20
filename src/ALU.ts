@@ -111,8 +111,11 @@ abstract class ALU { //Arithmetic-logic unit
     }
 
     static increment(a: byte) : byte {
-
         return this.add(a, [true]);
+    }
+
+    static decrement(a: byte, byteLength: number) : byte {
+        return this.sub(a, [true], byteLength);
     }
 
     static complement(a: byte, byteLength: number) : byte {

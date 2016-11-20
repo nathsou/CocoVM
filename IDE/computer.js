@@ -165,6 +165,9 @@ class ALU {
     static increment(a) {
         return this.add(a, [true]);
     }
+    static decrement(a, byteLength) {
+        return this.sub(a, [true], byteLength);
+    }
     static complement(a, byteLength) {
         let copy = a.slice();
         for (let i = 0; i < a.length; i++)
@@ -319,7 +322,14 @@ class Cpu extends EventEmitter {
             'JLSS!': 33,
             'MUL%%': 34,
             'MUL%@': 35,
-            'MUL%#': 36
+            'MUL%#': 36,
+            'PUSH%': 37,
+            'PUSH@': 38,
+            'PUSH#': 39,
+            'POP%': 40,
+            'POP@': 41,
+            'CALL!': 42,
+            'RET': 43
         };
         this.status_reg = {
             'ZERO': false,
@@ -338,6 +348,7 @@ class Cpu extends EventEmitter {
         this.bindEvent(this.RAM, 'error');
         this.PC = [];
         this.IR = [];
+        this.SP = this.toByte(arch.RAM_bytes - 1);
     }
     toByte(n) {
         if (n instanceof Array)
@@ -353,6 +364,11 @@ class Cpu extends EventEmitter {
             inst = inst.trim();
             if (inst === '' || inst[0] === ';')
                 continue;
+            //remove inline comments
+            if (inst.match(/;.*/)) {
+                for (let comment of (/;.*/.exec(inst)))
+                    inst = inst.replace(comment, '');
+            }
             let label;
             if ((label = /^[.A-Za-z]\w*:$/.exec(inst)) !== null) {
                 labels.set(label[0].replace(':', ''), instructions.length);
@@ -443,7 +459,7 @@ class Cpu extends EventEmitter {
     }
     step() {
         this.IR = this.RAM.read(this.PC);
-        let opcode = this.byte2num(this.IR);
+        let opcode = this.byte2num(this.IR); //TODO
         let a, b;
         switch (opcode) {
             case this.opcodes['HLT']:
@@ -669,8 +685,50 @@ class Cpu extends EventEmitter {
                 else
                     this.jump(1);
                 break;
+            case this.opcodes['PUSH%']:
+                a = this.RAM.read(ALU.increment(this.PC));
+                this.push(this.registers.read(a));
+                this.jump(1);
+                break;
+            case this.opcodes['PUSH@']:
+                a = this.RAM.read(ALU.increment(this.PC));
+                this.push(this.RAM.read(a));
+                this.jump(1);
+                break;
+            case this.opcodes['PUSH#']:
+                a = this.RAM.read(ALU.increment(this.PC));
+                this.push(a);
+                this.jump(1);
+                break;
+            case this.opcodes['POP%']:
+                a = this.RAM.read(ALU.increment(this.PC));
+                this.registers.write(a, this.pop());
+                this.jump(1);
+                break;
+            case this.opcodes['POP@']:
+                a = this.RAM.read(ALU.increment(this.PC));
+                this.RAM.write(a, this.pop());
+                this.jump(1);
+                break;
+            case this.opcodes['CALL!']:
+                a = this.RAM.read(ALU.increment(this.PC));
+                this.push(this.PC);
+                this.jump(a);
+                break;
+            case this.opcodes['RET']:
+                this.jump(this.pop());
+                break;
         }
         this.emit('step', this.PC);
+    }
+    push(a) {
+        this.SP = this.sub(this.SP, [true]);
+        this.RAM.write(this.SP, a);
+    }
+    pop() {
+        let r = this.RAM.read(this.SP);
+        this.SP = ALU.increment(this.SP);
+        return r;
     }
     jump(relative) {
         if (relative instanceof Array)
@@ -757,3 +815,4 @@ class Cpu extends EventEmitter {
         return mul.splice(mul.length - this.arch.bits, this.arch.bits);
     }
 }
+//# sourceMappingURL=computer.js.map

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Coco</title>
+  <link rel='stylesheet' href='coco_editor.css'>
+</head>
+
+<body>
+    <div id='top-panel'>
+        <div id="code" class="split split-horizontal">
+        <div id="prog" class="split">
+    ;fibonacci sequence
+
+    ;prints fib(42)
+    MOV @0, #42 
+
+    ;init data
+    MOV %0, #1
+    MOV %1, #1
+    MOV %2, #0
+    MOV %3, #2
+    JMP main
+
+    main:
+    INC %3
+    MOV %2, %0
+    ADD %0, %1
+    MOV %1, %2
+    CMP %3, @0
+    JNE main
+    OUT %0
+    HLT
+        </div>
+
+        </div>
+
+        <div id="debug" class="split split-horizontal">
+        <div id="e" class="split">
+                <textarea id='hexdump' style='width: 100%;'></textarea>
+
+                <button onclick='assembleProg();'>Assemble</button>
+                <button onclick='runProg();'>Run</button>
+                <button onclick='stepProg();'>Step</button>
+        </div>
+        </div>
+    </div>
+
+    <div id='console' class='split split-vertical'>
+
+    </div>
+
+
+</body>
+<script src="libs/Split/Split.min.js"></script>
+<script src='https://cdnjs.cloudflare.com/ajax/libs/ace/1.2.5/ace.js'></script>
+<script src='https://cdnjs.cloudflare.com/ajax/libs/ace/1.2.5/theme-monokai.js'></script>
+<script src='https://cdnjs.cloudflare.com/ajax/libs/ace/1.2.5/snippets/assembly_x86.js'></script>
+
+<script src='computer.js'></script>
+
+<script>
+
+    let top_panel = Split(['#code', '#debug'], {
+      sizes: [75, 25],
+      gutterSize: 8,
+      cursor: 'row-resize'
+    });
+
+    let bottom_panel = Split(['#top-panel', '#console'], {
+      direction: 'vertical',
+      sizes: [90, 10],
+      gutterSize: 12,
+      cursor: 'row-resize'
+    });
+
+
+    bottom_panel.collapse(1);
+
+    var editor = ace.edit("prog");
+    editor.setTheme("ace/theme/monokai");
+    editor.getSession().setMode("ace/mode/assembly_x86");
+
+    var computer = new Cpu({
+        bits: 32,
+        registerCount: 10,
+        RAM_bytes: 256
+    });
+
+    var prog_addr = 64;
+
+    function assembleProg() {
+        let prog = computer.compile(editor.getValue());
+        computer.loadProgram(prog, prog_addr);
+        document.getElementById('hexdump').value = Utils.bits2hexstr(prog);
+
+        computer.PC = prog_addr;
+    }
+
+    function stepProg() {
+        computer.step();
+    }
+
+    function runProg() {
+        computer.run(prog_addr, true);
+    }
+
+    computer.on('OUT', function(value) {
+
+        value = computer.byte2num(value);
+
+        document.getElementById('console').innerHTML += `${value}\n</br>`;
+        console.info(value);
+    });
+
+    computer.on('error', function(e) {
+        console.warn(e);
+        alert(e);
+    });
+
+</script>
+</html>

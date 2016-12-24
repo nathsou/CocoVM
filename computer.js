@@ -220,6 +220,344 @@ class ALU {
         return (a || b) && !(a && b);
     }
 }
+//Minimal arbitrarly long integer number class
+/*
+class BigInt {
+
+    protected sign: boolean;
+    protected base: number;
+    protected digits: number[];
+
+    constructor (n: string | number, base = 10) {
+
+        if (base > 10) throw new Error('Base cannot be > 10 yet');
+
+        this.base = base;
+
+        if (typeof(n) === 'number') n = n.toString();
+
+        this.sign = n[0] === '-';
+
+        if (this.sign) n = n.substr[1, n.length];
+
+        this.digits = [];
+
+        for (let char of (n as string)) this.digits.unshift(parseInt(char));
+
+    }
+
+    public add(b: BigInt) : BigInt {
+
+        if (this.base !== b.base)
+            throw new Error(`Cannot add numbers expressed in different bases: base ${this.base} and ${b.base}`);
+
+        let max = Math.max(this.digits.length, b.digits.length),
+        rem = 0;
+
+        for (let i = 0; i < max || rem > 0; i++) {
+            this.digits[i] = (rem += (this.digits[i] || 0) + (b.digits[i] || 0)) % b.base;
+            rem = Math.floor(rem / b.base);
+        }
+
+        return this;
+    }
+
+    public mult(b: BigInt) : BigInt {
+
+        if (this.base !== b.base)
+            throw new Error(`Cannot multiply numbers expressed in different bases: base ${this.base} and ${b.base}`);
+
+        let n = new BigInt(0, b.base);
+
+        for ()
+
+    }
+
+    public less(b: BigInt) : BigInt {
+        if (this.base !== b.base)
+            throw new Error(`Cannot compare numbers expressed in different bases: base ${this.base} and ${b.base}`);
+
+        
+    }
+
+    public complement() : BigInt { //n's complement
+        let n = this.base - 1;
+
+        for (let i = 0; i < this.digits.length; i++)
+            this.digits[i] = n - this.digits[i];
+
+        return this;
+    }
+
+    static fromArray(digits: number[], base = 10, negative = false) : BigInt {
+
+        let str = negative ? '-' : '';
+        for (let d of digits) str += d;
+
+        return new BigInt(str, base);
+    }
+
+    public toBase(base: number) : BigInt {
+
+        let rem = 0;
+        let digits = [];
+
+        for (let i = 0; i < this.digits.length || rem > 0; i++) {
+            digits.push((rem += ((this.digits[i] || 0))) % base);
+            rem = Math.floor(rem / base);
+        }
+
+        return BigInt.fromArray(digits, base, this.sign);
+    }
+
+    public toString() : string {
+        let str = this.sign ? '-' : '';
+
+        for (let d of this.digits)
+            str += d.toString();
+
+        return str;
+    }
+
+}
+
+class BigBinary extends BigInt {
+
+    constructor(n: string | number) {
+        super(n, 2);
+    }
+
+
+
+}
+*/
+//Minimal arbitrarly long integer number class
+class BigInt {
+    constructor(n, base = 10) {
+        this.pow_table = [1];
+        this.rest = 0;
+        if (base > 10)
+            throw new Error('Base cannot be > 10 yet');
+        this.base = base;
+        this.pow_table.push(base);
+        if (typeof (n) === 'number')
+            n = n.toString();
+        n = n.trim();
+        this.sign = n[0] === '-';
+        if (this.sign || n[0] === '+')
+            n = n.substring(1);
+        //remove useless zeroes
+        let frontZeroes = 0;
+        for (let c of n) {
+            if (c === '0')
+                frontZeroes++;
+            else
+                break;
+        }
+        n = n.substring(n.length === frontZeroes ? frontZeroes - 1 : frontZeroes);
+        this.digits = [];
+        for (let i = n.length - 1; i >= 0; i--)
+            this.digits.push(parseInt(n[i], base));
+    }
+    abs() {
+        return BigInt.fromArray(this.digits);
+    }
+    add(b) {
+        if (this.base !== b.base)
+            throw new Error(`Cannot add numbers expressed in different bases: base ${this.base} and ${b.base}`);
+        let max = Math.max(this.digits.length, b.digits.length), rem = 0;
+        for (let i = 0; i < max || rem > 0; i++) {
+            this.digits[i] = (rem += (this.digits[i] || 0) + (b.digits[i] || 0)) % b.base;
+            rem = Math.floor(rem / b.base);
+        }
+        return this;
+    }
+    subtract(b) {
+        if (this.sign !== b.sign)
+            return this.add(b);
+        this.sign = this.less(b);
+        let b_ = BigInt.clone(b);
+        let sub = (a, b) => {
+            let rem = 0;
+            for (let i = 0; i < a.digits.length; i++) {
+                a.digits[i] -= (b.digits[i] || 0) + rem;
+                a.digits[i] += (rem = (a.digits[i] < 0) ? 1 : 0) * 10;
+            }
+            return a.digits;
+        };
+        let digits = [];
+        //make sure that a > b
+        if (this.abs().less(b_.abs())) {
+            digits = sub(b_, this);
+        }
+        else
+            digits = sub(this, b_);
+        this.copy(BigInt.fromArray(digits, this.base, this.sign));
+        return this;
+    }
+    multiply(b) {
+        if (this.base !== b.base)
+            throw new Error(`Cannot multiply numbers expressed in different bases: base ${this.base} and ${b.base}`);
+        let b_ = BigInt.clone(b);
+        this.sign = this.sign !== b_.sign;
+        if (this.isZero() || b_.isZero()) {
+            this.digits = [0];
+            return this;
+        }
+        let one = new BigInt(1);
+        if (this.equals(one, true)) {
+            this.digits = b_.digits;
+            return this;
+        }
+        if (b.equals(one, true))
+            return this;
+        let base = new BigInt(b_.base);
+        // a * base <=> left shift
+        if (this.equals(base, true)) {
+            this.digits = b_.digits;
+            this.digits.unshift(0);
+            return this;
+        }
+        if (b_.equals(base, true)) {
+            this.digits.unshift(0);
+            return this;
+        }
+        let digits = [], rem = 0;
+        for (let i = 0; i < this.digits.length; i++) {
+            for (let a = 0; a < b_.digits.length || rem > 0; a++) {
+                digits[i + a] = (rem += (digits[i + a] || 0) + this.digits[i] * (b_.digits[a] || 0)) % b.base;
+                rem = Math.floor(rem / b_.base);
+            }
+        }
+        this.digits = digits;
+        return this;
+    }
+    //this / b
+    divide(b) {
+        if (this.base !== b.base)
+            throw new Error(`Cannot multiply numbers expressed in different bases: base ${this.base} and ${b.base}`);
+        if (b.isZero())
+            throw new Error(`Cannot divide by zero`);
+        let rest = new BigInt(0), base = new BigInt(b.base);
+        let b_ = BigInt.clone(b);
+        let result = [];
+        for (let i = this.digits.length - 1; i >= 0; i--) {
+            rest.multiply(new BigInt(10));
+            rest.digits[0] = this.digits[i];
+            result[i] = 0;
+            while (b_.leq(rest)) {
+                result[i]++;
+                rest.subtract(b_);
+            }
+        }
+        console.log(result);
+        this.rest = rest.toNumber();
+        this.copy(BigInt.fromArray(result));
+        return this;
+    }
+    less(b) {
+        if (this.base !== b.base)
+            throw new Error(`Cannot compare numbers expressed in different bases: base ${this.base} and ${b.base}`);
+        if (this.sign && !b.sign)
+            return true;
+        if (!this.sign && b.sign)
+            return false;
+        let xor = (a, b) => (a || b) && !(a && b); //inverts only if b is true
+        if (this.digits.length !== b.digits.length)
+            return xor(b.digits.length > this.digits.length, this.sign && b.sign);
+        for (let i = 0; i < b.digits.length; i++)
+            if (this.digits[i] < b.digits[i])
+                return true;
+        return false; //equal
+    }
+    equals(b, ignoreSign = false) {
+        if (this.base !== b.base)
+            throw new Error(`Cannot compare numbers expressed in different bases: base ${this.base} and ${b.base}`);
+        if (!ignoreSign && (this.digits.length !== b.digits.length))
+            return false;
+        //test for zero
+        if (this.digits.length === 1 && b.digits.length === 1 && this.digits[0] === 0 && b.digits[0] === 0)
+            return true;
+        if (this.sign !== b.sign)
+            return false;
+        for (let i = 0; i < b.digits.length; i++)
+            if (this.digits[i] !== b.digits[i])
+                return false;
+        return true;
+    }
+    isZero() {
+        return this.equals(new BigInt(0));
+    }
+    greater(b) {
+        return b.less(this);
+    }
+    leq(b) {
+        return !this.greater(b);
+    }
+    geq(b) {
+        return !this.less(b);
+    }
+    complement(digits) {
+        let n = this.base - 1;
+        for (let i = 0; i < digits; i++)
+            this.digits[i] = n - (this.digits[i] || 0);
+        return this;
+    }
+    static fromArray(digits, base = 10, negative = false) {
+        let str = negative ? '-' : '';
+        for (let i = digits.length - 1; i >= 0; i--)
+            str += digits[i];
+        return new BigInt(str, base);
+    }
+    static sort(...nums) {
+        return nums.sort((a, b) => {
+            if (a.equals(b))
+                return 0;
+            if (a.less(b))
+                return -1;
+            return 1;
+        });
+    }
+    copy(b) {
+        this.digits = b.digits.slice();
+        this.sign = b.sign;
+        this.base = b.base;
+        this.pow_table = b.pow_table;
+    }
+    static clone(b) {
+        return new BigInt(b.toString());
+    }
+    toBase(base) {
+        let rem = 0;
+        let digits = [];
+        for (let i = 0; i < this.digits.length || rem > 0; i++) {
+            digits.push((rem += ((this.digits[i] || 0))) % base);
+            rem = Math.floor(rem / base);
+        }
+        return BigInt.fromArray(digits, base, this.sign);
+    }
+    toString() {
+        let str = this.sign ? '-' : '';
+        for (let i = this.digits.length - 1; i >= 0; i--)
+            str += this.digits[i].toString();
+        return str;
+    }
+    toNumber() {
+        return parseInt(this.toString(), this.base);
+    }
+}
+/*
+class BigBinary extends BigInt {
+
+    constructor(n: string | number) {
+        super(n, 2);
+    }
+
+
+
+}
+
+*/
 class EventEmitter {
     constructor() {
         this.eventHandlers = new Map();
@@ -353,7 +691,7 @@ class Cpu extends EventEmitter {
     toByte(n) {
         if (n instanceof Array)
             return Utils.fillZeros(n, this.arch.bits);
-        return Utils.fillZeros(Utils.num2byte(n, this.arch.bits), this.arch.bits);
+        return Utils.fillZeros(Utils.num2byte(n, this.arch.bits), this.arch.bits); //FIX
     }
     compile(prog) {
         let binary = [];
@@ -459,7 +797,7 @@ class Cpu extends EventEmitter {
     }
     step() {
         this.IR = this.RAM.read(this.PC);
-        let opcode = this.byte2num(this.IR); //TODO
+        let opcode = this.byte2num(this.IR);
         let a, b;
         switch (opcode) {
             case this.opcodes['HLT']:
